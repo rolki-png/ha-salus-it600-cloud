@@ -1,0 +1,44 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Salus iT600 Cloud",
+        "description": "Enter your Salus Cloud credentials",
+        "data": {
+          "email": "Email",
+          "password": "Password"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Salus iT600 Cloud",
+        "description": "Salus Cloud rejected the password of {email}. Enter the current password.",
+        "data": {
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid email or password",
+      "cannot_connect": "Cannot connect to Salus Cloud",
+      "no_devices": "No devices found on your account",
+      "unknown": "Unexpected error occurred"
+    },
+    "abort": {
+      "already_configured": "Account is already configured",
+      "reauth_successful": "Password updated"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Salus iT600 Cloud",
+        "data": {
+          "sync_thermostat_modes": "Synchronize thermostat modes"
+        },
+        "data_description": {
+          "sync_thermostat_modes": "Changing the mode (off, schedule, manual, stand-by) of one thermostat in Home Assistant changes it for all thermostats of the same gateway. Target temperatures are not synchronized."
+        }
+      }
+    }
+  }
+}

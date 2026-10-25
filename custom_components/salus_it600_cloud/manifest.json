@@ -1,0 +1,18 @@
+{
+  "domain": "salus_it600_cloud",
+  "name": "Salus iT600 Cloud",
+  "codeowners": [
+    "@rolki-png"
+  ],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/rolki-png/ha-salus-it600-cloud",
+  "integration_type": "hub",
+  "iot_class": "cloud_push",
+  "issue_tracker": "https://github.com/rolki-png/ha-salus-it600-cloud/issues",
+  "requirements": [
+    "pycognito==2024.5.1",
+    "paho-mqtt>=2.0.0"
+  ],
+  "version": "1.2.0"
+}
