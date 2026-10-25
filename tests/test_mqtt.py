@@ -271,6 +271,7 @@ async def test_disconnect_on_subscribe_disables_push_and_reconnects() -> None:
     await connection.async_stop()
 
     assert push_states == [False]
+    assert connection.push_denied is True
     assert broker.clients[0].stopped is True
     assert broker.clients[1].subscriptions == []
     assert len(broker.clients[1].published) == 1
@@ -288,6 +289,7 @@ async def test_unexpected_disconnect_reconnects_with_new_client() -> None:
     await _until(lambda: len(broker.clients) == 2 and broker.clients[1].is_connected())
     await connection.async_stop()
 
+    assert connection.push_denied is False
     assert broker.clients[0].stopped is True
 
 

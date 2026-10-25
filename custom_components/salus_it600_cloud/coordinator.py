@@ -87,6 +87,15 @@ class SalusCloudCoordinator(DataUpdateCoordinator[dict[str, SalusDevice]]):
         return bool(self.config_entry.options.get(CONF_SYNC_MODES, False))
 
     @property
+    def push_denied(self) -> bool | None:
+        """Return whether AWS IoT refused pushed state changes, or None when no connection exists."""
+        connection = self._connection
+        if connection is None:
+            return None
+        denied = getattr(connection, "push_denied", None)
+        return denied if isinstance(denied, bool) else None
+
+    @property
     def gateways(self) -> list[GatewayInfo]:
         """Return gateways of the account."""
         return self._metadata.gateways if self._metadata else []

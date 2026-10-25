@@ -125,6 +125,11 @@ class SalusMqttConnection:
         """Return whether shadow documents are received, None while unknown."""
         return self._push_available
 
+    @property
+    def push_denied(self) -> bool:
+        """Return whether AWS IoT refused shadow subscriptions."""
+        return self._push_denied
+
     def set_device_codes(self, device_codes: list[str]) -> None:
         """Set devices whose shadow documents are subscribed on the next connection."""
         self._device_codes = list(device_codes)
