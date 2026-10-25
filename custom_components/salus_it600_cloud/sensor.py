@@ -10,7 +10,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import PERCENTAGE, UnitOfTemperature
+from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -35,10 +35,6 @@ async def async_setup_entry(
             continue
         if _has_temperature(device):
             entities.append(SalusCloudTemperatureSensor(coordinator, device_id, device))
-        if _has_humidity(device):
-            entities.append(SalusCloudHumiditySensor(coordinator, device_id, device))
-        if _has_battery(device):
-            entities.append(SalusCloudBatterySensor(coordinator, device_id, device))
     async_add_entities(entities)
 
 
@@ -46,16 +42,6 @@ def _has_temperature(device: dict[str, Any]) -> bool:
     """Check if device is a standalone temperature sensor."""
     device_type = device.get("type", "").lower()
     return device_type == "temperature_sensor" or (device_type == "sensor" and "temperature" in device)
-
-
-def _has_humidity(device: dict[str, Any]) -> bool:
-    """Check if device has humidity sensor."""
-    return "humidity" in device or ("status" in device and "humidity" in device["status"])
-
-
-def _has_battery(device: dict[str, Any]) -> bool:
-    """Check if device has battery information."""
-    return "battery" in device or "battery_level" in device or ("status" in device and "battery" in device["status"])
 
 
 def _value(data: dict[str, Any], fields: tuple[str, ...], scale_above_100: bool) -> float | None:
@@ -126,37 +112,3 @@ class SalusCloudTemperatureSensor(SalusCloudSensor):
     def native_value(self) -> float | None:
         """Return the temperature value."""
         return _value(self.device_data, ("temperature", "current_temperature", "LocalTemperature"), True)
-
-
-class SalusCloudHumiditySensor(SalusCloudSensor):
-    """Humidity sensor for Salus Cloud devices."""
-
-    _attr_device_class = SensorDeviceClass.HUMIDITY
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_native_unit_of_measurement = PERCENTAGE
-
-    def __init__(self, coordinator: SalusCloudCoordinator, device_id: str, device: SalusDevice) -> None:
-        """Initialize the humidity sensor."""
-        super().__init__(coordinator, device_id, device, "humidity")
-
-    @property
-    def native_value(self) -> float | None:
-        """Return the humidity value."""
-        return _value(self.device_data, ("humidity", "current_humidity"), True)
-
-
-class SalusCloudBatterySensor(SalusCloudSensor):
-    """Battery sensor for Salus Cloud devices."""
-
-    _attr_device_class = SensorDeviceClass.BATTERY
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_native_unit_of_measurement = PERCENTAGE
-
-    def __init__(self, coordinator: SalusCloudCoordinator, device_id: str, device: SalusDevice) -> None:
-        """Initialize the battery sensor."""
-        super().__init__(coordinator, device_id, device, "battery")
-
-    @property
-    def native_value(self) -> float | None:
-        """Return the battery level."""
-        return _value(self.device_data, ("battery", "battery_level", "battery_percentage"), False)

@@ -111,3 +111,68 @@ async def test_calling_during_standby_is_on_while_climate_action_is_off() -> Non
 
     assert _entity(coordinator).is_on is True
     assert climate.hvac_action is HVACAction.OFF
+
+
+def _contact(device_id: str, **fields: object) -> dict[str, object]:
+    return {
+        "id": device_id,
+        "name": device_id,
+        "_gateway_id": fixtures.GATEWAY_ID,
+        "_fresh": True,
+        **fields,
+    }
+
+
+def _contact_uid(device_id: str) -> str:
+    return f"salus_it600_cloud_{fixtures.GATEWAY_ID}_{device_id}"
+
+
+async def _setup_contacts(coordinator: object) -> dict[str, object]:
+    entry = MagicMock()
+    entry.runtime_data = coordinator
+    add_entities = MagicMock()
+    await binary_sensor.async_setup_entry(MagicMock(), entry, add_entities)
+    return {entity.unique_id: entity for entity in add_entities.call_args.args[0]}
+
+
+async def test_wls_is_moisture_and_window_and_door_keep_their_classes() -> None:
+    """A WLS model is moisture. Window and door come from the model or the type."""
+
+    coordinator, _, _ = await create_coordinator()
+    coordinator.data["leak"] = _contact("leak", type="door_sensor", model="WLS600")
+    coordinator.data["window"] = _contact("window", type="window_sensor", model="SW600")
+    coordinator.data["door"] = _contact("door", type="door_sensor", model="OS600")
+    coordinator.data["hall"] = _contact("hall", type="binary_sensor", model="Hall Window")
+
+    entities = await _setup_contacts(coordinator)
+
+    assert entities[_contact_uid("leak")].device_class is BinarySensorDeviceClass.MOISTURE
+    assert entities[_contact_uid("window")].device_class is BinarySensorDeviceClass.WINDOW
+    assert entities[_contact_uid("door")].device_class is BinarySensorDeviceClass.DOOR
+    assert entities[_contact_uid("hall")].device_class is BinarySensorDeviceClass.WINDOW
+
+
+async def test_contact_without_a_state_field_is_unknown() -> None:
+    """No matching field leaves the contact unknown, and the entity stays available."""
+
+    coordinator, _, _ = await create_coordinator()
+    coordinator.data["leak"] = _contact("leak", type="binary_sensor", model="WLS600")
+
+    entities = await _setup_contacts(coordinator)
+    entity = entities[_contact_uid("leak")]
+
+    assert entity.is_on is None
+    assert entity.available is True
+
+
+async def test_reported_open_and_closed_values() -> None:
+    """A present open field still reports on and off."""
+
+    coordinator, _, _ = await create_coordinator()
+    coordinator.data["open"] = _contact("open", type="door_sensor", model="OS600", open=1)
+    coordinator.data["shut"] = _contact("shut", type="door_sensor", model="OS600", open=0)
+
+    entities = await _setup_contacts(coordinator)
+
+    assert entities[_contact_uid("open")].is_on is True
+    assert entities[_contact_uid("shut")].is_on is False

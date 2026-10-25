@@ -110,3 +110,32 @@ async def test_climate_device_skips_the_legacy_temperature_sensor() -> None:
     assert _uid(fixtures.THERMOSTAT_ID, "temperature") not in entities
     assert _uid(fixtures.THERMOSTAT_ID, "local_temperature") in entities
     assert entities[_uid("hall", "temperature")].native_value == 19.5
+
+
+async def test_humidity_and_battery_keys_create_no_sensors() -> None:
+    """REST humidity and battery keys do not become sensors."""
+
+    coordinator, _, _ = await create_coordinator()
+    coordinator.data["spare"] = {
+        "id": "spare",
+        "type": "sensor",
+        "name": "Spare",
+        "_gateway_id": fixtures.GATEWAY_ID,
+        "humidity": 40,
+        "battery": 90,
+        "battery_level": 90,
+        "status": {"humidity": 40, "battery": 90},
+        "_fresh": True,
+    }
+    entry = MagicMock()
+    entry.runtime_data = coordinator
+    add_entities = MagicMock()
+
+    await sensor.async_setup_entry(MagicMock(), entry, add_entities)
+
+    assert [entity.unique_id for entity in add_entities.call_args.args[0]] == [
+        _uid(fixtures.THERMOSTAT_ID, "local_temperature"),
+        _uid(fixtures.THERMOSTAT_ID, "heating_setpoint"),
+        _uid(fixtures.THERMOSTAT_2_ID, "local_temperature"),
+        _uid(fixtures.THERMOSTAT_2_ID, "heating_setpoint"),
+    ]

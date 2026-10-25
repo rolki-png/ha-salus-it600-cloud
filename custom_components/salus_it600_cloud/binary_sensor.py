@@ -44,8 +44,13 @@ def _is_binary_sensor_device(device: dict[str, Any]) -> bool:
 
 def _get_device_class(device: dict[str, Any]) -> BinarySensorDeviceClass | None:
     """Determine binary sensor device class."""
-    device_type = device.get("type", "").lower()
-    if "door" in device_type or "window" in device_type or device.get("model", "").upper().startswith("WLS"):
+    device_type = (device.get("type") or "").lower()
+    model = (device.get("model") or "").upper()
+    if model.startswith("WLS"):
+        return BinarySensorDeviceClass.MOISTURE
+    if "window" in device_type or "WINDOW" in model:
+        return BinarySensorDeviceClass.WINDOW
+    if "door" in device_type or "DOOR" in model:
         return BinarySensorDeviceClass.DOOR
     if "motion" in device_type:
         return BinarySensorDeviceClass.MOTION
@@ -100,8 +105,8 @@ class SalusCloudBinarySensor(SalusEntity, BinarySensorEntity):
         self._attr_device_class = device_class
 
     @property
-    def is_on(self) -> bool:
-        """Return true if the binary sensor is on."""
+    def is_on(self) -> bool | None:
+        """Return whether the contact is on. None when no field reports it."""
         data = self.device_data
         for field in ("is_on", "state", "active", "triggered", "open"):
             if field in data and (value := _as_bool(data[field])) is not None:
@@ -111,4 +116,4 @@ class SalusCloudBinarySensor(SalusEntity, BinarySensorEntity):
             for field in ("state", "active", "triggered"):
                 if field in status and (value := _as_bool(status[field])) is not None:
                     return value
-        return False
+        return None
