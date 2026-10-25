@@ -74,6 +74,26 @@ def test_czech_catalog_has_the_same_entity_keys() -> None:
     )
 
 
+def test_cloud_unavailable_issue_is_translated() -> None:
+    """The cloud repair uses the same keys in every catalog and does not mention a local gateway."""
+
+    strings = _load("strings.json")
+    english = _load("translations/en.json")
+    czech = _load("translations/cs.json")
+
+    assert strings["issues"] == english["issues"]
+    assert _paths(czech["issues"]) == _paths(strings["issues"])
+    issue = strings["issues"]["cloud_unavailable"]
+    assert issue["title"] == "Salus Cloud is unavailable"
+    assert "{email}" in issue["description"]
+    assert "{email}" in czech["issues"]["cloud_unavailable"]["description"]
+    for catalog in (strings, english, czech):
+        description = catalog["issues"]["cloud_unavailable"]["description"].lower()
+        assert "wifi" not in description
+        assert "euid" not in description
+        assert "ip address" not in description
+
+
 def test_preset_icons_cover_every_preset() -> None:
     """Preset icons follow the climate translation key."""
 

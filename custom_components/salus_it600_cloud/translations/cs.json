@@ -49,6 +49,12 @@
       }
     }
   },
+  "issues": {
+    "cloud_unavailable": {
+      "title": "Salus Cloud není dostupný",
+      "description": "Home Assistant nemohl načíst stav zařízení účtu Salus Cloud {email}. Účet v cloudu nebo cesta aktualizací přes MQTT neodpovídá. Zkontrolujte, že se účet může přihlásit a že aktualizace zařízení dorazí do Home Assistantu."
+    }
+  },
   "entity": {
     "binary_sensor": {
       "problem": {

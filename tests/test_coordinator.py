@@ -12,13 +12,16 @@ from custom_components.salus_it600_cloud.api import (
     SalusCloudConnectionError,
 )
 from custom_components.salus_it600_cloud.const import (
+    CONF_EMAIL,
     CONF_POST_COMMAND_REFRESH_DELAY,
     CONF_PUSH_SCAN_INTERVAL,
     CONF_SCAN_INTERVAL,
+    DOMAIN,
     MAX_PUSH_SCAN_INTERVAL_SECONDS,
     MAX_SCAN_INTERVAL_SECONDS,
     MIN_SCAN_INTERVAL_SECONDS,
 )
+from custom_components.salus_it600_cloud.coordinator import ISSUE_CLOUD_UNAVAILABLE
 
 from . import fixtures
 from .helpers import CALL_LATER, FakeApi, FakeConnection, create_coordinator
@@ -319,6 +322,112 @@ async def test_onetouch_rule_is_triggered_through_gateway_shadow() -> None:
     assert connection.published == [
         (fixtures.GATEWAY_CODE, "000000000001", {"ep0:sRule:SetTriggerRule": fixtures.RULE_TRIGGER_KEY})
     ]
+
+
+def _install_repairs(monkeypatch: pytest.MonkeyPatch) -> dict[tuple[str, str], dict[str, object]]:
+    issues: dict[tuple[str, str], dict[str, object]] = {}
+
+    def create(_hass: object, domain: str, issue_id: str, **kwargs: object) -> None:
+        issues[(domain, issue_id)] = kwargs
+
+    def delete(_hass: object, domain: str, issue_id: str) -> None:
+        issues.pop((domain, issue_id), None)
+
+    monkeypatch.setattr(
+        "custom_components.salus_it600_cloud.coordinator.ir.async_create_issue",
+        create,
+    )
+    monkeypatch.setattr(
+        "custom_components.salus_it600_cloud.coordinator.ir.async_delete_issue",
+        delete,
+    )
+    return issues
+
+
+async def _fail_shadow_poll(api: FakeApi, coordinator: object, clock: list[float], at: float) -> dict:
+    api.shadows = SalusCloudConnectionError("timeout")
+    clock[0] = at
+    return await coordinator._async_update_data()
+
+
+async def test_consecutive_failed_shadow_polls_open_and_clear_cloud_repair(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Three kept-state poll failures open a cloud repair. A later successful poll closes it."""
+
+    api = FakeApi()
+    coordinator, _, clock = await create_coordinator(api)
+    coordinator.config_entry.data = {CONF_EMAIL: "ada@example.com"}
+    issues = _install_repairs(monkeypatch)
+    issue_id = (DOMAIN, f"salus-entry_{ISSUE_CLOUD_UNAVAILABLE}")
+
+    await _fail_shadow_poll(api, coordinator, clock, 30)
+    kept = await _fail_shadow_poll(api, coordinator, clock, 60)
+    assert issue_id not in issues
+    assert kept[fixtures.THERMOSTAT_ID]["_fresh"] is True
+    assert kept[fixtures.THERMOSTAT_ID]["_shadow_properties"][HOLD] == 0
+
+    api.shadows = {fixtures.THERMOSTAT_CODE: fixtures.thermostat_shadow(hold_type=0)}
+    clock[0] = 90
+    await coordinator._async_update_data()
+    assert issue_id not in issues
+
+    await _fail_shadow_poll(api, coordinator, clock, 120)
+    await _fail_shadow_poll(api, coordinator, clock, 150)
+    assert issue_id not in issues
+    await _fail_shadow_poll(api, coordinator, clock, 180)
+
+    assert issues[issue_id]["translation_key"] == ISSUE_CLOUD_UNAVAILABLE
+    assert issues[issue_id]["translation_placeholders"] == {"email": "ada@example.com"}
+    assert issues[issue_id]["severity"] == "error"
+    assert issues[issue_id]["is_fixable"] is False
+
+    await _fail_shadow_poll(api, coordinator, clock, 210)
+    assert list(issues) == [issue_id]
+
+    api.shadows = {fixtures.THERMOSTAT_CODE: fixtures.thermostat_shadow(hold_type=2)}
+    clock[0] = 240
+    refreshed = await coordinator._async_update_data()
+
+    assert issues == {}
+    assert refreshed[fixtures.THERMOSTAT_ID]["_shadow_properties"][HOLD] == 2
+
+
+async def test_mqtt_push_clears_cloud_repair(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A pushed shadow update closes the cloud repair without waiting for the next poll."""
+
+    api = FakeApi()
+    coordinator, connection, clock = await create_coordinator(api)
+    coordinator.config_entry.data = {CONF_EMAIL: "ada@example.com"}
+    issues = _install_repairs(monkeypatch)
+    issue_id = (DOMAIN, f"salus-entry_{ISSUE_CLOUD_UNAVAILABLE}")
+
+    await _fail_shadow_poll(api, coordinator, clock, 30)
+    await _fail_shadow_poll(api, coordinator, clock, 60)
+    await _fail_shadow_poll(api, coordinator, clock, 90)
+    assert issue_id in issues
+
+    connection.kwargs["on_shadow_document"](
+        fixtures.THERMOSTAT_CODE, fixtures.thermostat_shadow(hold_type=2, temperature_x100=2350)
+    )
+
+    assert issues == {}
+    assert coordinator.data[fixtures.THERMOSTAT_ID]["_shadow_properties"][HOLD] == 2
+
+
+async def test_stale_poll_failure_does_not_open_cloud_repair(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A connection error after stored state has gone stale does not open the repair."""
+
+    api = FakeApi()
+    coordinator, _, clock = await create_coordinator(api)
+    issues = _install_repairs(monkeypatch)
+    api.shadows = SalusCloudConnectionError("timeout")
+    clock[0] = 601
+
+    with pytest.raises(UpdateFailed):
+        await coordinator._async_update_data()
+
+    assert issues == {}
 
 
 async def test_shutdown_stops_connection() -> None:

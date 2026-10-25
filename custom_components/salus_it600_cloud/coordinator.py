@@ -12,6 +12,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -24,12 +25,14 @@ from .api import (
     SalusMetadata,
 )
 from .const import (
+    CONF_EMAIL,
     CONF_SYNC_MODES,
     DEFAULT_SHADOW_INDEX,
     DOMAIN,
     GATEWAY_SHADOW_INDEX,
     METADATA_REFRESH_SECONDS,
     PENDING_TIMEOUT_SECONDS,
+    POLL_FAILURE_THRESHOLD,
     POLL_SCAN_INTERVAL,
     POST_COMMAND_REFRESH_DELAY,
     PUSH_SCAN_INTERVAL,
@@ -41,6 +44,8 @@ from .mqtt import SalusMqttConnection
 from .state import DeviceStateStore, extract_reported
 
 _LOGGER = logging.getLogger(__name__)
+
+ISSUE_CLOUD_UNAVAILABLE = "cloud_unavailable"
 
 
 def _scan_interval(options: Mapping[str, Any], *, push: bool) -> timedelta:
@@ -87,6 +92,8 @@ class SalusCloudCoordinator(DataUpdateCoordinator[dict[str, SalusDevice]]):
         self.push_available = False
         # Gateway id -> device registry id of the gateway device
         self.gateway_device_ids: dict[str, str] = {}
+        self._consecutive_shadow_failures = 0
+        self._cloud_unavailable_issue = False
 
     @property
     def sync_modes(self) -> bool:
@@ -147,7 +154,10 @@ class SalusCloudCoordinator(DataUpdateCoordinator[dict[str, SalusDevice]]):
                 if not any(self._store.is_fresh(code, now) for code in self._device_codes()):
                     raise UpdateFailed(f"Error communicating with Salus Cloud: {err}") from err
                 _LOGGER.warning("Failed to refresh device states, keeping last known states: %s", err)
+                self._record_shadow_poll_failure()
                 shadows = {}
+            else:
+                self._record_shadow_contact()
         except SalusCloudAuthenticationError as err:
             raise ConfigEntryAuthFailed(str(err)) from err
 
@@ -211,12 +221,53 @@ class SalusCloudCoordinator(DataUpdateCoordinator[dict[str, SalusDevice]]):
             return
         now = self._clock()
         self._store.update_reported(device_code, reported[0], reported[1], now)
+        self._record_shadow_contact()
         self.async_set_updated_data(self._build_data(now))
 
     @callback
     def _handle_push_available(self, available: bool) -> None:
         self.push_available = available
         self.update_interval = _scan_interval(self.config_entry.options, push=available)
+
+    def _record_shadow_poll_failure(self) -> None:
+        self._consecutive_shadow_failures += 1
+        if self._cloud_unavailable_issue:
+            return
+        if self._consecutive_shadow_failures < POLL_FAILURE_THRESHOLD.read(self.config_entry.options):
+            return
+        self._open_cloud_unavailable_issue()
+
+    def _record_shadow_contact(self) -> None:
+        self._consecutive_shadow_failures = 0
+        if not self._cloud_unavailable_issue:
+            return
+        self._close_cloud_unavailable_issue()
+
+    def _cloud_unavailable_issue_id(self) -> str:
+        return f"{self.config_entry.entry_id}_{ISSUE_CLOUD_UNAVAILABLE}"
+
+    def _account_email(self) -> str:
+        email = self.config_entry.data.get(CONF_EMAIL)
+        if isinstance(email, str) and email:
+            return email
+        return "Salus Cloud"
+
+    def _open_cloud_unavailable_issue(self) -> None:
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            self._cloud_unavailable_issue_id(),
+            is_fixable=False,
+            is_persistent=False,
+            severity=ir.IssueSeverity.ERROR,
+            translation_key=ISSUE_CLOUD_UNAVAILABLE,
+            translation_placeholders={"email": self._account_email()},
+        )
+        self._cloud_unavailable_issue = True
+
+    def _close_cloud_unavailable_issue(self) -> None:
+        ir.async_delete_issue(self.hass, DOMAIN, self._cloud_unavailable_issue_id())
+        self._cloud_unavailable_issue = False
 
     async def async_set_hold_type(self, device_id: str, hold_type: int) -> None:
         """Set hold type of a thermostat, or of all thermostats of its gateway when modes are synchronized."""

@@ -49,6 +49,12 @@
       }
     }
   },
+  "issues": {
+    "cloud_unavailable": {
+      "title": "Salus Cloud is unavailable",
+      "description": "Home Assistant could not refresh devices for the Salus cloud account {email}. The cloud account or the MQTT update path is not responding. Check that the account can sign in and that device updates reach Home Assistant."
+    }
+  },
   "entity": {
     "binary_sensor": {
       "problem": {

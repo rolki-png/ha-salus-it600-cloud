@@ -1,5 +1,6 @@
 """Tests for Salus thermostat entities."""
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from unittest.mock import MagicMock, patch
 
@@ -221,6 +222,33 @@ async def test_set_temperature_shows_new_target_immediately() -> None:
     ]
     assert entity.target_temperature == 21.5
     assert entity.preset_mode == "manual"
+
+
+async def test_slider_drags_collapse_to_one_temperature_write(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A burst of setpoints sends only the latest write."""
+
+    monkeypatch.setattr(climate, "TARGET_TEMPERATURE_DEBOUNCE_SECONDS", 0.05)
+    coordinator, connection, _ = await create_coordinator()
+    entity = _entity(coordinator)
+
+    with patch(CALL_LATER):
+        first = asyncio.create_task(entity.async_set_temperature(temperature=20.0))
+        await asyncio.sleep(0.01)
+        second = asyncio.create_task(entity.async_set_temperature(temperature=21.5))
+        await asyncio.gather(first, second)
+
+    assert connection.published == [
+        (
+            fixtures.THERMOSTAT_CODE,
+            "11",
+            {
+                "ep9:sIT600TH:SetHeatingSetpoint_x100": 2150,
+                "ep9:sIT600TH:SetHoldType": 2,
+                "ep9:sIT600TH:SetSystemMode": 4,
+            },
+        )
+    ]
+    assert entity.target_temperature == 21.5
 
 
 MIN_HEAT = "ep9:sIT600TH:MinHeatSetpoint_x100"

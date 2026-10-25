@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from homeassistant.components.climate import (
@@ -27,6 +28,9 @@ def _degrees(sample: CentiCelsius | None, default: float) -> float:
         return default
     return sample.celsius()
 
+
+# Each slider step calls set_temperature. Wait out the burst, then send the last value.
+TARGET_TEMPERATURE_DEBOUNCE_SECONDS = 0.3
 
 _HVAC_ACTION: dict[HeatingAction, HVACAction | None] = {
     HeatingAction.HEATING: HVACAction.HEATING,
@@ -70,6 +74,7 @@ class SalusCloudClimate(SalusEntity, ClimateEntity):
     _attr_target_temperature_step = 0.5
     _attr_min_temp = 5.0
     _attr_max_temp = 35.0
+    _temperature_write: asyncio.Task[None] | None = None
 
     @property
     def min_temp(self) -> float:
@@ -121,9 +126,27 @@ class SalusCloudClimate(SalusEntity, ClimateEntity):
         return None if observation is None else observation.preset_slug()
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
-        """Set target temperature."""
-        if (temperature := kwargs.get(ATTR_TEMPERATURE)) is not None:
-            await self.coordinator.async_set_temperature(self._device_id, temperature)
+        """Set target temperature. A newer setpoint cancels a write that has not been sent."""
+        if (temperature := kwargs.get(ATTR_TEMPERATURE)) is None:
+            return
+        self._cancel_pending_temperature_write()
+        write = asyncio.create_task(self._async_write_temperature(float(temperature)))
+        self._temperature_write = write
+        try:
+            await write
+        except asyncio.CancelledError:
+            current = asyncio.current_task()
+            if current is not None and current.cancelling():
+                raise
+
+    async def _async_write_temperature(self, temperature: float) -> None:
+        await asyncio.sleep(TARGET_TEMPERATURE_DEBOUNCE_SECONDS)
+        await self.coordinator.async_set_temperature(self._device_id, temperature)
+
+    def _cancel_pending_temperature_write(self) -> None:
+        write = self._temperature_write
+        if write is not None and not write.done():
+            write.cancel()
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         """Set preset (synchronized across the gateway when enabled)."""
