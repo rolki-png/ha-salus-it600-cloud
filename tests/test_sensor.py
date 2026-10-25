@@ -55,10 +55,19 @@ async def test_native_values_match_reported_temperatures() -> None:
 
     coordinator, _, _ = await create_coordinator()
 
-    assert _entity(coordinator, "local_temperature").native_value == 22.0
-    assert _entity(coordinator, "heating_setpoint").native_value == 21.0
-    assert _entity(coordinator, "local_temperature").name == "Apartmán A Termostat pokoj Temperature"
-    assert _entity(coordinator, "heating_setpoint").name == "Apartmán A Termostat pokoj Heating setpoint"
+    room = _entity(coordinator, "local_temperature")
+    setpoint = _entity(coordinator, "heating_setpoint")
+
+    assert room.native_value == 22.0
+    assert setpoint.native_value == 21.0
+    assert room.name == "Apartmán A Termostat pokoj Temperature"
+    assert setpoint.name == "Apartmán A Termostat pokoj Heating setpoint"
+    assert room.unique_id == _uid(fixtures.THERMOSTAT_ID, "local_temperature")
+    assert setpoint.unique_id == _uid(fixtures.THERMOSTAT_ID, "heating_setpoint")
+    assert room.has_entity_name is False
+    assert setpoint.has_entity_name is False
+    assert room.translation_key == "temperature"
+    assert setpoint.translation_key == "heating_setpoint"
 
 
 async def test_missing_temperature_is_unknown_and_the_entity_still_exists() -> None:
@@ -109,7 +118,11 @@ async def test_climate_device_skips_the_legacy_temperature_sensor() -> None:
     entities = {entity.unique_id: entity for entity in add_entities.call_args.args[0]}
     assert _uid(fixtures.THERMOSTAT_ID, "temperature") not in entities
     assert _uid(fixtures.THERMOSTAT_ID, "local_temperature") in entities
-    assert entities[_uid("hall", "temperature")].native_value == 19.5
+    hall = entities[_uid("hall", "temperature")]
+    assert hall.native_value == 19.5
+    assert hall.unique_id == _uid("hall", "temperature")
+    assert hall.translation_key == "temperature"
+    assert hall.has_entity_name is False
 
 
 async def test_humidity_and_battery_keys_create_no_sensors() -> None:
@@ -192,6 +205,8 @@ async def test_battery_level_zero_is_a_raw_diagnostic() -> None:
     assert entity.entity_category is EntityCategory.DIAGNOSTIC
     assert entity.state_class is SensorStateClass.MEASUREMENT
     assert entity.name == "Apartmán A Termostat pokoj Battery level"
+    assert entity.translation_key == "battery_level"
+    assert entity.has_entity_name is False
     assert _uid(fixtures.THERMOSTAT_2_ID, "battery_level") not in entities
 
 
@@ -229,12 +244,16 @@ async def test_signal_strength_and_link_quality_follow_their_own_keys() -> None:
     assert rssi.native_unit_of_measurement == SIGNAL_STRENGTH_DECIBELS_MILLIWATT
     assert rssi.entity_category is EntityCategory.DIAGNOSTIC
     assert rssi.name == "Apartmán A Termostat pokoj Signal strength"
+    assert rssi.translation_key == "signal_strength"
+    assert rssi.has_entity_name is False
     assert lqi.native_value == 180
     assert lqi.device_class is None
     assert lqi.native_unit_of_measurement is None
     assert lqi.entity_category is EntityCategory.DIAGNOSTIC
     assert lqi.state_class is SensorStateClass.MEASUREMENT
     assert lqi.name == "Apartmán A Termostat pokoj Link quality"
+    assert lqi.translation_key == "link_quality"
+    assert lqi.has_entity_name is False
 
 
 async def test_rssi_without_lqi_creates_only_the_signal_sensor() -> None:

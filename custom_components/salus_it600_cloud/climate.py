@@ -49,6 +49,7 @@ async def async_setup_entry(
 class SalusCloudClimate(SalusEntity, ClimateEntity):
     """Salus iT600 thermostat."""
 
+    _attr_translation_key = "thermostat"
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_supported_features = (
         ClimateEntityFeature.TARGET_TEMPERATURE

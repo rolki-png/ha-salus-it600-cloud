@@ -40,8 +40,12 @@ async def test_entity_name_is_unchanged() -> None:
     """Existing names (and therefore entity ids) of thermostats stay the same."""
 
     coordinator, _, _ = await create_coordinator()
+    entity = _entity(coordinator)
 
-    assert _entity(coordinator).name == "Apartmán A Termostat pokoj"
+    assert entity.name == "Apartmán A Termostat pokoj"
+    assert entity.unique_id == f"salus_it600_cloud_{fixtures.GATEWAY_ID}_{fixtures.THERMOSTAT_ID}"
+    assert entity.has_entity_name is False
+    assert entity.translation_key == "thermostat"
 
 
 async def test_schedule_mode_state() -> None:

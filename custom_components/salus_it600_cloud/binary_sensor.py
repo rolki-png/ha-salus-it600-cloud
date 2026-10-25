@@ -110,6 +110,7 @@ class SalusRunningState(SalusEntity, BinarySensorEntity):
         super().__init__(coordinator, device_id, device)
         self._attr_name = f"{self._attr_name} {RUNNING_STATE_METRIC.name}"
         self._attr_unique_id = f"{self._attr_unique_id}_{RUNNING_STATE_METRIC.slug}"
+        self._attr_translation_key = RUNNING_STATE_METRIC.translation_key
 
     @property
     def is_on(self) -> bool | None:
@@ -129,6 +130,7 @@ class SalusThermostatProblem(SalusEntity, BinarySensorEntity):
         super().__init__(coordinator, device_id, device)
         self._attr_name = f"{self._attr_name} {PROBLEM_METRIC.name}"
         self._attr_unique_id = f"{self._attr_unique_id}_{PROBLEM_METRIC.slug}"
+        self._attr_translation_key = PROBLEM_METRIC.translation_key
 
     @property
     def is_on(self) -> bool | None:

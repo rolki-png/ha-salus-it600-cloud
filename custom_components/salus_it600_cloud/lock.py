@@ -51,6 +51,7 @@ class SalusThermostatLock(SalusEntity, LockEntity):
         super().__init__(coordinator, device_id, device)
         self._attr_name = f"{self._attr_name} {LOCK_METRIC.name}"
         self._attr_unique_id = f"{self._attr_unique_id}_{LOCK_METRIC.slug}"
+        self._attr_translation_key = LOCK_METRIC.translation_key
 
     @property
     def is_locked(self) -> bool | None:

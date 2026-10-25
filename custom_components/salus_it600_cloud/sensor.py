@@ -117,6 +117,7 @@ class SalusHeatingTemperature(SalusEntity, SensorEntity):
         self._metric = metric
         self._attr_name = f"{self._attr_name} {metric.name}"
         self._attr_unique_id = f"{self._attr_unique_id}_{metric.slug}"
+        self._attr_translation_key = metric.translation_key
 
     @property
     def native_value(self) -> float | None:
@@ -144,6 +145,7 @@ class SalusDiagnosticSensor(SalusEntity, SensorEntity):
         self._metric = metric
         self._attr_name = f"{self._attr_name} {metric.name}"
         self._attr_unique_id = f"{self._attr_unique_id}_{metric.slug}"
+        self._attr_translation_key = metric.translation_key
         if metric.kind is DiagnosticKind.SIGNAL_DBM:
             self._attr_device_class = SensorDeviceClass.SIGNAL_STRENGTH
             self._attr_native_unit_of_measurement = SIGNAL_STRENGTH_DECIBELS_MILLIWATT
@@ -175,6 +177,8 @@ class SalusCloudTemperatureSensor(SalusCloudSensor):
     _attr_device_class = SensorDeviceClass.TEMPERATURE
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+
+    _attr_translation_key = "temperature"
 
     def __init__(self, coordinator: SalusCloudCoordinator, device_id: str, device: SalusDevice) -> None:
         """Initialize the temperature sensor."""

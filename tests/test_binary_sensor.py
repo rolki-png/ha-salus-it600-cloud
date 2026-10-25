@@ -55,6 +55,9 @@ async def test_idle_demand_is_off() -> None:
     assert entity.is_on is False
     assert entity.available is True
     assert entity.name == "Apartmán A Termostat pokoj Running state"
+    assert entity.unique_id == _uid(fixtures.THERMOSTAT_ID)
+    assert entity.has_entity_name is False
+    assert entity.translation_key == "running_state"
 
 
 async def test_missing_running_state_is_unknown_not_off() -> None:
@@ -230,6 +233,8 @@ async def test_error_codes_become_one_problem_sensor() -> None:
     assert entity.is_on is True
     assert entity.extra_state_attributes == {"error_codes": ["Error06", "Error32"]}
     assert entity.name == "Apartmán A Termostat pokoj Problem"
+    assert entity.translation_key == "problem"
+    assert entity.has_entity_name is False
     assert _problem_uid(fixtures.THERMOSTAT_2_ID) not in entities
     assert _uid(fixtures.THERMOSTAT_ID) in entities
 

@@ -253,19 +253,24 @@ class ThermostatObservation:
 
 @dataclass(frozen=True)
 class TemperatureMetric:
-    """One statistics sensor. read returns the observation field, not a wire key."""
+    """One statistics sensor. read returns the observation field, not a wire key.
+
+    slug is part of the unique id. translation_key is the strings.json entity key.
+    """
 
     slug: str
     name: str
+    translation_key: str
     read: Callable[[ThermostatObservation], CentiCelsius | None]
 
 
 @dataclass(frozen=True)
 class MetricLabel:
-    """Stable unique-id slug and the words appended to the device name."""
+    """Unique-id slug, English name suffix, and strings.json entity key."""
 
     slug: str
     name: str
+    translation_key: str
 
 
 def _read_local(observation: ThermostatObservation) -> CentiCelsius | None:
@@ -277,12 +282,12 @@ def _read_setpoint(observation: ThermostatObservation) -> CentiCelsius | None:
 
 
 TEMPERATURE_METRICS: tuple[TemperatureMetric, ...] = (
-    TemperatureMetric("local_temperature", "Temperature", _read_local),
-    TemperatureMetric("heating_setpoint", "Heating setpoint", _read_setpoint),
+    TemperatureMetric("local_temperature", "Temperature", "temperature", _read_local),
+    TemperatureMetric("heating_setpoint", "Heating setpoint", "heating_setpoint", _read_setpoint),
 )
-RUNNING_STATE_METRIC = MetricLabel("running_state", "Running state")
-PROBLEM_METRIC = MetricLabel("problem", "Problem")
-LOCK_METRIC = MetricLabel("lock", "Keypad lock")
+RUNNING_STATE_METRIC = MetricLabel("running_state", "Running state", "running_state")
+PROBLEM_METRIC = MetricLabel("problem", "Problem", "problem")
+LOCK_METRIC = MetricLabel("lock", "Keypad lock", "keypad_lock")
 
 
 class DiagnosticKind(Enum):
@@ -294,10 +299,14 @@ class DiagnosticKind(Enum):
 
 @dataclass(frozen=True)
 class DiagnosticMetric:
-    """One numeric diagnostic. read returns the cell, not a wire key."""
+    """One numeric diagnostic. read returns the cell, not a wire key.
+
+    slug is part of the unique id. translation_key is the strings.json entity key.
+    """
 
     slug: str
     name: str
+    translation_key: str
     kind: DiagnosticKind
     read: Callable[[ClimateDiagnostics], IntCell]
 
@@ -315,9 +324,11 @@ def _read_lqi(reading: ClimateDiagnostics) -> IntCell:
 
 
 DIAGNOSTIC_METRICS: tuple[DiagnosticMetric, ...] = (
-    DiagnosticMetric("battery_level", "Battery level", DiagnosticKind.RAW, _read_battery_level),
-    DiagnosticMetric("signal_strength", "Signal strength", DiagnosticKind.SIGNAL_DBM, _read_rssi),
-    DiagnosticMetric("link_quality", "Link quality", DiagnosticKind.RAW, _read_lqi),
+    DiagnosticMetric("battery_level", "Battery level", "battery_level", DiagnosticKind.RAW, _read_battery_level),
+    DiagnosticMetric(
+        "signal_strength", "Signal strength", "signal_strength", DiagnosticKind.SIGNAL_DBM, _read_rssi
+    ),
+    DiagnosticMetric("link_quality", "Link quality", "link_quality", DiagnosticKind.RAW, _read_lqi),
 )
 
 _PRESET_RAW: dict[str, int] = {"schedule": 0, "manual": 2, "away": 7}

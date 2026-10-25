@@ -47,6 +47,9 @@ async def test_setup_creates_a_lock_when_lock_key_is_present_including_zero() ->
     assert entity.is_locked is False
     assert entity.entity_category is EntityCategory.CONFIG
     assert entity.name == "Apartmán A Termostat pokoj Keypad lock"
+    assert entity.unique_id == _uid(fixtures.THERMOSTAT_ID)
+    assert entity.translation_key == "keypad_lock"
+    assert entity.has_entity_name is False
     assert _uid(fixtures.THERMOSTAT_2_ID) not in entities
     assert _uid(fixtures.RELAY_ID) not in entities
 

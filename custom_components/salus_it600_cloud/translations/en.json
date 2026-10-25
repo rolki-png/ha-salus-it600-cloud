@@ -48,5 +48,54 @@
         }
       }
     }
+  },
+  "entity": {
+    "binary_sensor": {
+      "problem": {
+        "name": "Problem"
+      },
+      "running_state": {
+        "name": "Running state",
+        "state": {
+          "off": "Idle",
+          "on": "Heating"
+        }
+      }
+    },
+    "climate": {
+      "thermostat": {
+        "state_attributes": {
+          "preset_mode": {
+            "state": {
+              "away": "Frost protection",
+              "manual": "Manual",
+              "schedule": "Schedule"
+            }
+          }
+        }
+      }
+    },
+    "lock": {
+      "keypad_lock": {
+        "name": "Keypad lock"
+      }
+    },
+    "sensor": {
+      "battery_level": {
+        "name": "Battery level"
+      },
+      "heating_setpoint": {
+        "name": "Heating setpoint"
+      },
+      "link_quality": {
+        "name": "Link quality"
+      },
+      "signal_strength": {
+        "name": "Signal strength"
+      },
+      "temperature": {
+        "name": "Temperature"
+      }
+    }
   }
 }

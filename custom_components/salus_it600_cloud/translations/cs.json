@@ -48,5 +48,54 @@
         }
       }
     }
+  },
+  "entity": {
+    "binary_sensor": {
+      "problem": {
+        "name": "Problém"
+      },
+      "running_state": {
+        "name": "Stav provozu",
+        "state": {
+          "off": "Nečinný",
+          "on": "Topení"
+        }
+      }
+    },
+    "climate": {
+      "thermostat": {
+        "state_attributes": {
+          "preset_mode": {
+            "state": {
+              "away": "Protimrazová ochrana",
+              "manual": "Manuál",
+              "schedule": "Časový plán"
+            }
+          }
+        }
+      }
+    },
+    "lock": {
+      "keypad_lock": {
+        "name": "Zámek klávesnice"
+      }
+    },
+    "sensor": {
+      "battery_level": {
+        "name": "Úroveň baterie"
+      },
+      "heating_setpoint": {
+        "name": "Nastavená teplota topení"
+      },
+      "link_quality": {
+        "name": "Kvalita spojení"
+      },
+      "signal_strength": {
+        "name": "Síla signálu"
+      },
+      "temperature": {
+        "name": "Teplota"
+      }
+    }
   }
 }

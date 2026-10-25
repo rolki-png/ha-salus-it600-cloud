@@ -1,0 +1,17 @@
+{
+  "entity": {
+    "climate": {
+      "thermostat": {
+        "state_attributes": {
+          "preset_mode": {
+            "state": {
+              "away": "mdi:snowflake",
+              "manual": "mdi:hand-back-right",
+              "schedule": "mdi:calendar"
+            }
+          }
+        }
+      }
+    }
+  }
+}
