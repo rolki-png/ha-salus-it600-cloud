@@ -33,10 +33,18 @@
       "init": {
         "title": "Salus iT600 Cloud",
         "data": {
-          "sync_thermostat_modes": "Synchronizovat režim termostatů"
+          "sync_thermostat_modes": "Synchronizovat režim termostatů",
+          "scan_interval": "Interval dotazování",
+          "push_scan_interval": "Interval dotazování při příchozích změnách",
+          "post_command_refresh_delay": "Prodleva potvrzení příkazu",
+          "poll_failure_threshold": "Neúspěšné dotazy před opravou"
         },
         "data_description": {
-          "sync_thermostat_modes": "Změna režimu (vypnuto, časový plán, manuál, stand-by) jednoho termostatu v Home Assistantu se provede u všech termostatů na stejné bráně. Nastavené teploty se nesynchronizují."
+          "sync_thermostat_modes": "Změna režimu (vypnuto, časový plán, manuál, stand-by) jednoho termostatu v Home Assistantu se provede u všech termostatů na stejné bráně. Nastavené teploty se nesynchronizují.",
+          "scan_interval": "Počet sekund mezi dotazy na stav zařízení, když změny stavu nepřicházejí.",
+          "push_scan_interval": "Počet sekund mezi dotazy na stav zařízení, když změny stavu přicházejí.",
+          "post_command_refresh_delay": "Počet sekund po odeslání příkazu, než se stav ověří dotazem, když změny stavu nepřicházejí.",
+          "poll_failure_threshold": "Počet po sobě jdoucích neúspěšných dotazů, které integrace snese, než začne spojení opravovat."
         }
       }
     }

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -25,14 +25,14 @@ from .api import (
 )
 from .const import (
     CONF_SYNC_MODES,
-    CONFIRM_REFRESH_DELAY_SECONDS,
     DEFAULT_SHADOW_INDEX,
     DOMAIN,
     GATEWAY_SHADOW_INDEX,
     METADATA_REFRESH_SECONDS,
     PENDING_TIMEOUT_SECONDS,
-    PUSH_SCAN_INTERVAL_SECONDS,
-    SCAN_INTERVAL_SECONDS,
+    POLL_SCAN_INTERVAL,
+    POST_COMMAND_REFRESH_DELAY,
+    PUSH_SCAN_INTERVAL,
     STALE_AFTER_SECONDS,
 )
 from .devices import is_climate_device
@@ -41,6 +41,13 @@ from .mqtt import SalusMqttConnection
 from .state import DeviceStateStore, extract_reported
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _scan_interval(options: Mapping[str, Any], *, push: bool) -> timedelta:
+    """Return the poll interval for the current push state."""
+    option = PUSH_SCAN_INTERVAL if push else POLL_SCAN_INTERVAL
+    return timedelta(seconds=option.read(options))
+
 
 # Device from the Salus device list extended with "_gateway_id", "_shadow_properties",
 # "_shadow_device_index" and "_fresh"
@@ -67,7 +74,7 @@ class SalusCloudCoordinator(DataUpdateCoordinator[dict[str, SalusDevice]]):
             _LOGGER,
             config_entry=entry,
             name=DOMAIN,
-            update_interval=timedelta(seconds=SCAN_INTERVAL_SECONDS),
+            update_interval=_scan_interval(entry.options, push=False),
         )
         self.api = api
         self._connection_factory = connection_factory
@@ -209,7 +216,7 @@ class SalusCloudCoordinator(DataUpdateCoordinator[dict[str, SalusDevice]]):
     @callback
     def _handle_push_available(self, available: bool) -> None:
         self.push_available = available
-        self.update_interval = timedelta(seconds=PUSH_SCAN_INTERVAL_SECONDS if available else SCAN_INTERVAL_SECONDS)
+        self.update_interval = _scan_interval(self.config_entry.options, push=available)
 
     async def async_set_hold_type(self, device_id: str, hold_type: int) -> None:
         """Set hold type of a thermostat, or of all thermostats of its gateway when modes are synchronized."""
@@ -291,7 +298,9 @@ class SalusCloudCoordinator(DataUpdateCoordinator[dict[str, SalusDevice]]):
         if self._cancel_confirmation is not None:
             self._cancel_confirmation()
         self._cancel_confirmation = async_call_later(
-            self.hass, CONFIRM_REFRESH_DELAY_SECONDS, self._async_confirmation_refresh
+            self.hass,
+            POST_COMMAND_REFRESH_DELAY.read(self.config_entry.options),
+            self._async_confirmation_refresh,
         )
 
     async def _async_confirmation_refresh(self, _now: datetime) -> None:

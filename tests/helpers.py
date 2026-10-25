@@ -88,7 +88,11 @@ class FakeConnection:
 
 
 async def create_coordinator(
-    api: FakeApi | None = None, *, sync: bool = False, connection: FakeConnection | None = None
+    api: FakeApi | None = None,
+    *,
+    sync: bool = False,
+    connection: FakeConnection | None = None,
+    options: dict[str, Any] | None = None,
 ) -> tuple[SalusCloudCoordinator, FakeConnection, list[float]]:
     """Return coordinator after its first refresh with started (fake) MQTT connection and its clock."""
 
@@ -96,7 +100,7 @@ async def create_coordinator(
     hass.loop = asyncio.get_running_loop()
     entry = MagicMock()
     entry.entry_id = "salus-entry"
-    entry.options = {CONF_SYNC_MODES: sync}
+    entry.options = {**(options or {}), CONF_SYNC_MODES: sync}
     clock = [0.0]
     connection = connection or FakeConnection()
     coordinator = SalusCloudCoordinator(

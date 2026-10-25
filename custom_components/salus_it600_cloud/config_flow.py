@@ -15,10 +15,11 @@ from homeassistant.config_entries import (
 )
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
 from homeassistant.core import callback
+from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import SalusCloudApi, SalusCloudAuthenticationError, SalusCloudConnectionError
-from .const import CONF_SYNC_MODES, DOMAIN
+from .const import CONF_SYNC_MODES, DOMAIN, NUMERIC_OPTIONS, NumberOption
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -96,18 +97,42 @@ class SalusIT600CloudConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
 
+def _number_selector(option: NumberOption) -> selector.NumberSelector:
+    """Return a box selector for one bounded integer option."""
+    config: dict[str, Any] = {
+        "min": option.minimum,
+        "max": option.maximum,
+        "step": 1,
+        "mode": selector.NumberSelectorMode.BOX,
+    }
+    if option.unit is not None:
+        config["unit_of_measurement"] = option.unit
+    return selector.NumberSelector(config)
+
+
+def _options_schema(current: Mapping[str, Any]) -> vol.Schema:
+    """Return the options form, with saved values or the built-in defaults."""
+    fields: dict[Any, Any] = {
+        vol.Required(CONF_SYNC_MODES, default=bool(current.get(CONF_SYNC_MODES, False))): bool,
+    }
+    for option in NUMERIC_OPTIONS:
+        fields[vol.Required(option.key, default=option.read(current))] = _number_selector(option)
+    return vol.Schema(fields)
+
+
+def _options_data(user_input: Mapping[str, Any]) -> dict[str, Any]:
+    """Return options to store, with numbers coerced and clamped."""
+    data: dict[str, Any] = {CONF_SYNC_MODES: bool(user_input[CONF_SYNC_MODES])}
+    for option in NUMERIC_OPTIONS:
+        data[option.key] = option.read(user_input)
+    return data
+
+
 class SalusOptionsFlow(OptionsFlowWithReload):
     """Options of Salus iT600 Cloud integration."""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Manage mode synchronization."""
+        """Manage integration options."""
         if user_input is not None:
-            return self.async_create_entry(data=user_input)
-        return self.async_show_form(
-            step_id="init",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_SYNC_MODES, default=self.config_entry.options.get(CONF_SYNC_MODES, False)): bool,
-                }
-            ),
-        )
+            return self.async_create_entry(data=_options_data(user_input))
+        return self.async_show_form(step_id="init", data_schema=_options_schema(self.config_entry.options))

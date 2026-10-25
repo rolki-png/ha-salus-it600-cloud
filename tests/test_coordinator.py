@@ -11,6 +11,14 @@ from custom_components.salus_it600_cloud.api import (
     SalusCloudAuthenticationError,
     SalusCloudConnectionError,
 )
+from custom_components.salus_it600_cloud.const import (
+    CONF_POST_COMMAND_REFRESH_DELAY,
+    CONF_PUSH_SCAN_INTERVAL,
+    CONF_SCAN_INTERVAL,
+    MAX_PUSH_SCAN_INTERVAL_SECONDS,
+    MAX_SCAN_INTERVAL_SECONDS,
+    MIN_SCAN_INTERVAL_SECONDS,
+)
 
 from . import fixtures
 from .helpers import CALL_LATER, FakeApi, FakeConnection, create_coordinator
@@ -255,6 +263,50 @@ async def test_push_availability_adjusts_polling_interval() -> None:
 
     connection.kwargs["on_push_available"](False)
     assert coordinator.update_interval == timedelta(seconds=30)
+
+
+async def test_scan_intervals_follow_options() -> None:
+    """Saved poll intervals replace the built-in 30 second and 5 minute defaults."""
+
+    coordinator, connection, _ = await create_coordinator(
+        options={CONF_SCAN_INTERVAL: 45, CONF_PUSH_SCAN_INTERVAL: 600}
+    )
+
+    assert coordinator.update_interval == timedelta(seconds=45)
+
+    connection.kwargs["on_push_available"](True)
+    assert coordinator.update_interval == timedelta(seconds=600)
+
+    connection.kwargs["on_push_available"](False)
+    assert coordinator.update_interval == timedelta(seconds=45)
+
+
+async def test_scan_interval_outside_bounds_is_clamped() -> None:
+    """A stored interval below the minimum or above the maximum does not leave that range."""
+
+    coordinator, connection, _ = await create_coordinator(
+        options={CONF_SCAN_INTERVAL: 1, CONF_PUSH_SCAN_INTERVAL: 99999}
+    )
+
+    assert coordinator.update_interval == timedelta(seconds=MIN_SCAN_INTERVAL_SECONDS)
+
+    connection.kwargs["on_push_available"](True)
+    assert coordinator.update_interval == timedelta(seconds=MAX_PUSH_SCAN_INTERVAL_SECONDS)
+
+    coordinator.config_entry.options = {CONF_SCAN_INTERVAL: 99999}
+    connection.kwargs["on_push_available"](False)
+    assert coordinator.update_interval == timedelta(seconds=MAX_SCAN_INTERVAL_SECONDS)
+
+
+async def test_confirmation_delay_follows_options() -> None:
+    """Without push, the confirmation poll waits the saved number of seconds."""
+
+    coordinator, _, _ = await create_coordinator(options={CONF_POST_COMMAND_REFRESH_DELAY: 4})
+
+    with patch(CALL_LATER) as call_later:
+        await coordinator.async_set_hold_type(fixtures.THERMOSTAT_ID, 7)
+
+    assert call_later.call_args.args[1] == 4
 
 
 async def test_onetouch_rule_is_triggered_through_gateway_shadow() -> None:

@@ -33,10 +33,18 @@
       "init": {
         "title": "Salus iT600 Cloud",
         "data": {
-          "sync_thermostat_modes": "Synchronize thermostat modes"
+          "sync_thermostat_modes": "Synchronize thermostat modes",
+          "scan_interval": "Poll interval",
+          "push_scan_interval": "Poll interval while updates are pushed",
+          "post_command_refresh_delay": "Command confirmation delay",
+          "poll_failure_threshold": "Failed polls before repair"
         },
         "data_description": {
-          "sync_thermostat_modes": "Changing the mode (off, schedule, manual, stand-by) of one thermostat in Home Assistant changes it for all thermostats of the same gateway. Target temperatures are not synchronized."
+          "sync_thermostat_modes": "Changing the mode (off, schedule, manual, stand-by) of one thermostat in Home Assistant changes it for all thermostats of the same gateway. Target temperatures are not synchronized.",
+          "scan_interval": "Seconds between device polls when pushed updates are unavailable.",
+          "push_scan_interval": "Seconds between device polls while pushed updates are arriving.",
+          "post_command_refresh_delay": "Seconds to wait after a command before polling for the result, when pushed updates are unavailable.",
+          "poll_failure_threshold": "Consecutive failed polls to tolerate before repairing the connection."
         }
       }
     }
