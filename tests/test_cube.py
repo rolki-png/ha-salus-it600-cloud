@@ -96,6 +96,9 @@ def test_history_cells_decode_without_a_shadow_map() -> None:
     assert sample.observation.demand.is_on() is None
     assert sample.observation.local_temperature.celsius() == 0.0
     assert sample.observation.heating_setpoint.celsius() == 21.0
+    assert sample.observation.min_heat_setpoint is None
+    assert sample.observation.max_heat_setpoint is None
+    assert sample.observation.cooling.exposed is False
 
 
 def test_history_timestamp_must_be_aware() -> None:

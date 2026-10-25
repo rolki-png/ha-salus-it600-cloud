@@ -203,12 +203,34 @@ class SystemMode:
 
 
 @dataclass(frozen=True)
+class CoolingReport:
+    """Reported cooling setpoint. This is not a system mode.
+
+    exposed is true when the control cell is the integer 1 or the setpoint key
+    exists. sample is None when that key is absent or not an int. The integer
+    0 is 0°C. A bool control value is not enabled.
+    """
+
+    exposed: bool
+    sample: CentiCelsius | None
+
+    def __post_init__(self) -> None:
+        if self.sample is not None and type(self.sample) is not CentiCelsius:
+            raise TypeError("cooling sample must be CentiCelsius")
+        if self.sample is not None and not self.exposed:
+            raise ValueError("a cooling sample requires exposure")
+
+
+@dataclass(frozen=True)
 class ThermostatObservation:
     """One parsed thermostat shadow. observe and history cells are the only builders."""
 
     demand: Demand
     local_temperature: CentiCelsius | None
     heating_setpoint: CentiCelsius | None
+    min_heat_setpoint: CentiCelsius | None
+    max_heat_setpoint: CentiCelsius | None
+    cooling: CoolingReport
     hold: Hold
     system_mode: SystemMode
     battery: DeciVolt | None
@@ -216,9 +238,16 @@ class ThermostatObservation:
     def __post_init__(self) -> None:
         if type(self.demand) is not Demand:
             raise TypeError("demand must be Demand")
-        for sample in (self.local_temperature, self.heating_setpoint):
+        for sample in (
+            self.local_temperature,
+            self.heating_setpoint,
+            self.min_heat_setpoint,
+            self.max_heat_setpoint,
+        ):
             if sample is not None and type(sample) is not CentiCelsius:
                 raise TypeError("temperatures must be CentiCelsius")
+        if type(self.cooling) is not CoolingReport:
+            raise TypeError("cooling must be CoolingReport")
         if type(self.hold) is not Hold or type(self.system_mode) is not SystemMode:
             raise TypeError("hold and system_mode must be their domain types")
         if self.battery is not None and type(self.battery) is not DeciVolt:
@@ -256,12 +285,15 @@ class TemperatureMetric:
     """One statistics sensor. read returns the observation field, not a wire key.
 
     slug is part of the unique id. translation_key is the strings.json entity key.
+    shown is None when every thermostat gets the sensor. A callable selects which
+    observations get it.
     """
 
     slug: str
     name: str
     translation_key: str
     read: Callable[[ThermostatObservation], CentiCelsius | None]
+    shown: Callable[[ThermostatObservation], bool] | None = None
 
 
 @dataclass(frozen=True)
@@ -281,9 +313,24 @@ def _read_setpoint(observation: ThermostatObservation) -> CentiCelsius | None:
     return observation.heating_setpoint
 
 
+def _read_cooling(observation: ThermostatObservation) -> CentiCelsius | None:
+    return observation.cooling.sample
+
+
+def _cooling_shown(observation: ThermostatObservation) -> bool:
+    return observation.cooling.exposed
+
+
 TEMPERATURE_METRICS: tuple[TemperatureMetric, ...] = (
     TemperatureMetric("local_temperature", "Temperature", "temperature", _read_local),
     TemperatureMetric("heating_setpoint", "Heating setpoint", "heating_setpoint", _read_setpoint),
+)
+COOLING_SETPOINT_METRIC = TemperatureMetric(
+    "cooling_setpoint",
+    "Cooling setpoint",
+    "cooling_setpoint",
+    _read_cooling,
+    _cooling_shown,
 )
 RUNNING_STATE_METRIC = MetricLabel("running_state", "Running state", "running_state")
 PROBLEM_METRIC = MetricLabel("problem", "Problem", "problem")
@@ -351,6 +398,10 @@ _READ_ONLY = {
     "local_temperature": "ep9:sIT600TH:LocalTemperature_x100",
     "battery": "ep9:sBasicS:BatteryVoltage",
 }
+_MIN_HEAT_KEY = "ep9:sIT600TH:MinHeatSetpoint_x100"
+_MAX_HEAT_KEY = "ep9:sIT600TH:MaxHeatSetpoint_x100"
+_COOLING_SETPOINT_KEY = "ep9:sIT600TH:CoolingSetpoint_x100"
+_COOLING_CONTROL_KEY = "ep9:sIT600TH:CoolingControl"
 _LOCK_WIRE = ("ep9:sIT600TH:SetLockKey", "ep9:sIT600TH:LockKey")
 _BATTERY_LEVEL_KEY = "ep9:sIT600TH:BatteryLevel"
 _RSSI_KEY = "ep9:sIT600I:LastMessageRSSI_d"
@@ -417,13 +468,29 @@ def observation_from_cells(
     system_mode_present: bool,
     battery_tenths: Any,
     battery_present: bool,
+    min_heat_x100: Any = None,
+    min_heat_present: bool = False,
+    max_heat_x100: Any = None,
+    max_heat_present: bool = False,
+    cooling_x100: Any = None,
+    cooling_present: bool = False,
+    cooling_control: Any = None,
+    cooling_control_present: bool = False,
 ) -> ThermostatObservation:
-    """Build an observation from raw cells. Callers do not pass property names."""
+    """Build an observation from raw cells. Callers do not pass property names.
+
+    Heat limits and cooling default to absent. History rows do not carry them.
+    """
     tenths = _optional_int(battery_present, battery_tenths)
     return ThermostatObservation(
         demand=decode_running_cell(running, present=running_present),
         local_temperature=decode_x100_cell(local_x100, present=local_present),
         heating_setpoint=decode_x100_cell(setpoint_x100, present=setpoint_present),
+        min_heat_setpoint=decode_x100_cell(min_heat_x100, present=min_heat_present),
+        max_heat_setpoint=decode_x100_cell(max_heat_x100, present=max_heat_present),
+        cooling=_cooling_from_cells(
+            cooling_x100, cooling_present, cooling_control, cooling_control_present
+        ),
         hold=_hold(hold_present, hold),
         system_mode=SystemMode(_optional_int(system_mode_present, system_mode)),
         battery=None if tenths is None else DeciVolt(tenths),
@@ -441,6 +508,10 @@ def observe(properties: Mapping[str, Any]) -> ThermostatObservation | None:
     running_present, running = _cell(properties, _READ_ONLY["running_state"])
     local_present, local = _cell(properties, _READ_ONLY["local_temperature"])
     setpoint_present, setpoint = _cell(properties, _SETPOINT_WIRE[1])
+    min_heat_present, min_heat = _cell(properties, _MIN_HEAT_KEY)
+    max_heat_present, max_heat = _cell(properties, _MAX_HEAT_KEY)
+    cooling_present, cooling = _cell(properties, _COOLING_SETPOINT_KEY)
+    control_present, control = _cell(properties, _COOLING_CONTROL_KEY)
     hold_present, hold = _cell(properties, _HOLD_WIRE[1])
     system_present, system_mode = _cell(properties, _SYSTEM_WIRE[1])
     battery_present, battery = _cell(properties, _READ_ONLY["battery"])
@@ -457,6 +528,14 @@ def observe(properties: Mapping[str, Any]) -> ThermostatObservation | None:
         system_mode_present=system_present,
         battery_tenths=battery,
         battery_present=battery_present,
+        min_heat_x100=min_heat,
+        min_heat_present=min_heat_present,
+        max_heat_x100=max_heat,
+        max_heat_present=max_heat_present,
+        cooling_x100=cooling,
+        cooling_present=cooling_present,
+        cooling_control=control,
+        cooling_control_present=control_present,
     )
 
 
@@ -486,6 +565,19 @@ def _optional_int(present: bool, value: Any) -> int | None:
     if present and type(value) is int:
         return value
     return None
+
+
+def _cooling_from_cells(
+    setpoint_x100: Any,
+    setpoint_present: bool,
+    control: Any,
+    control_present: bool,
+) -> CoolingReport:
+    enabled = control_present and type(control) is int and control == 1
+    return CoolingReport(
+        exposed=enabled or setpoint_present,
+        sample=decode_x100_cell(setpoint_x100, present=setpoint_present),
+    )
 
 
 def _hold(present: bool, value: Any) -> Hold:

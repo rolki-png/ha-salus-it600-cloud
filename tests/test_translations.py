@@ -9,6 +9,7 @@ ROOT = Path(__file__).parents[1] / "custom_components" / "salus_it600_cloud"
 
 SENSOR_NAMES = {
     "battery_level": "Battery level",
+    "cooling_setpoint": "Cooling setpoint",
     "heating_setpoint": "Heating setpoint",
     "link_quality": "Link quality",
     "signal_strength": "Signal strength",
@@ -67,6 +68,7 @@ def test_czech_catalog_has_the_same_entity_keys() -> None:
 
     assert _paths(czech["entity"]) == _paths(strings["entity"])
     assert czech["entity"]["sensor"]["temperature"]["name"] == "Teplota"
+    assert czech["entity"]["sensor"]["cooling_setpoint"]["name"] == "Nastavená teplota chlazení"
     assert czech["entity"]["climate"]["thermostat"]["state_attributes"]["preset_mode"]["state"]["away"] == (
         "Protimrazová ochrana"
     )

@@ -84,6 +84,9 @@
       "battery_level": {
         "name": "Battery level"
       },
+      "cooling_setpoint": {
+        "name": "Cooling setpoint"
+      },
       "heating_setpoint": {
         "name": "Heating setpoint"
       },

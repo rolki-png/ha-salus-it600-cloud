@@ -307,3 +307,81 @@ async def test_battery_level_that_appears_later_is_added_once() -> None:
     coordinator.async_set_updated_data({})
     coordinator.async_set_updated_data(dict(coordinator.data))
     assert add_entities.call_count == calls
+
+
+COOLING = "ep9:sIT600TH:CoolingSetpoint_x100"
+COOLING_CONTROL = "ep9:sIT600TH:CoolingControl"
+
+
+async def test_cooling_setpoint_is_a_measurement_when_the_key_is_present() -> None:
+    """The sensor shows degrees. It is not a diagnostic, and the other thermostat does not get one."""
+
+    coordinator, _, _ = await _coordinator_with(**{COOLING: 1800, COOLING_CONTROL: 0})
+    entities = await _sensor_entities(coordinator)
+    entity = entities[_uid(fixtures.THERMOSTAT_ID, "cooling_setpoint")]
+
+    assert isinstance(entity, SalusHeatingTemperature)
+    assert entity.native_value == 18.0
+    assert entity.state_class is SensorStateClass.MEASUREMENT
+    assert entity.device_class is SensorDeviceClass.TEMPERATURE
+    assert entity.native_unit_of_measurement == UnitOfTemperature.CELSIUS
+    assert entity.suggested_display_precision == 1
+    assert entity.entity_category is None
+    assert entity.translation_key == "cooling_setpoint"
+    assert entity.name == "Apartmán A Termostat pokoj Cooling setpoint"
+    assert entity.has_entity_name is False
+    assert _uid(fixtures.THERMOSTAT_2_ID, "cooling_setpoint") not in entities
+
+
+async def test_cooling_control_without_a_setpoint_still_adds_the_sensor() -> None:
+    coordinator, _, _ = await _coordinator_with(**{COOLING_CONTROL: 1})
+    entity = (await _sensor_entities(coordinator))[_uid(fixtures.THERMOSTAT_ID, "cooling_setpoint")]
+
+    assert entity.native_value is None
+
+
+async def test_disabled_cooling_without_a_setpoint_adds_no_sensor() -> None:
+    coordinator, _, _ = await _coordinator_with(**{COOLING_CONTROL: 0})
+
+    assert _uid(fixtures.THERMOSTAT_ID, "cooling_setpoint") not in await _sensor_entities(coordinator)
+
+
+async def test_bool_cooling_control_is_not_enabled() -> None:
+    coordinator, _, _ = await _coordinator_with(**{COOLING_CONTROL: True})
+
+    assert _uid(fixtures.THERMOSTAT_ID, "cooling_setpoint") not in await _sensor_entities(coordinator)
+
+
+async def test_present_non_int_cooling_setpoint_is_unknown() -> None:
+    coordinator, _, _ = await _coordinator_with(**{COOLING: True})
+    entity = (await _sensor_entities(coordinator))[_uid(fixtures.THERMOSTAT_ID, "cooling_setpoint")]
+
+    assert entity.native_value is None
+
+
+async def test_zero_cooling_setpoint_is_zero_degrees() -> None:
+    coordinator, _, _ = await _coordinator_with(**{COOLING: 0})
+    entity = (await _sensor_entities(coordinator))[_uid(fixtures.THERMOSTAT_ID, "cooling_setpoint")]
+
+    assert entity.native_value == 0.0
+
+
+async def test_cooling_setpoint_that_appears_later_is_added_once() -> None:
+    """A setpoint key that shows up after setup still gets one sensor. A repeat does not add another."""
+
+    coordinator, _, _ = await create_coordinator()
+    entry, add_entities = _setup_sensors(coordinator)
+    await sensor.async_setup_entry(MagicMock(), entry, add_entities)
+    assert _uid(fixtures.THERMOSTAT_ID, "cooling_setpoint") not in _added(add_entities)
+
+    properties = dict(coordinator.data[fixtures.THERMOSTAT_ID]["_shadow_properties"])
+    properties[COOLING] = 1900
+    coordinator.data[fixtures.THERMOSTAT_ID]["_shadow_properties"] = properties
+    coordinator.async_set_updated_data(dict(coordinator.data))
+    entity = _added(add_entities)[_uid(fixtures.THERMOSTAT_ID, "cooling_setpoint")]
+    assert entity.native_value == 19.0
+
+    calls = add_entities.call_count
+    coordinator.async_set_updated_data({})
+    coordinator.async_set_updated_data(dict(coordinator.data))
+    assert add_entities.call_count == calls

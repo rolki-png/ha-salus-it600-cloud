@@ -84,6 +84,9 @@
       "battery_level": {
         "name": "Úroveň baterie"
       },
+      "cooling_setpoint": {
+        "name": "Nastavená teplota chlazení"
+      },
       "heating_setpoint": {
         "name": "Nastavená teplota topení"
       },

@@ -18,7 +18,15 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .coordinator import SalusCloudCoordinator, SalusDevice
 from .devices import is_climate_device
 from .entity import SalusEntity, async_add_salus_entities
-from .heating import PRESET_SLUGS, HeatingAction, heating_action, hold_raw_for_preset, observe
+from .heating import PRESET_SLUGS, CentiCelsius, HeatingAction, heating_action, hold_raw_for_preset, observe
+
+
+def _degrees(sample: CentiCelsius | None, default: float) -> float:
+    """Return degrees from a reported sample, or the default when that sample is absent."""
+    if sample is None:
+        return default
+    return sample.celsius()
+
 
 _HVAC_ACTION: dict[HeatingAction, HVACAction | None] = {
     HeatingAction.HEATING: HVACAction.HEATING,
@@ -62,6 +70,20 @@ class SalusCloudClimate(SalusEntity, ClimateEntity):
     _attr_target_temperature_step = 0.5
     _attr_min_temp = 5.0
     _attr_max_temp = 35.0
+
+    @property
+    def min_temp(self) -> float:
+        """Return the lowest heating setpoint the shadow reports, or 5°C."""
+        observation = observe(self.shadow_properties)
+        sample = None if observation is None else observation.min_heat_setpoint
+        return _degrees(sample, self._attr_min_temp)
+
+    @property
+    def max_temp(self) -> float:
+        """Return the highest heating setpoint the shadow reports, or 35°C."""
+        observation = observe(self.shadow_properties)
+        sample = None if observation is None else observation.max_heat_setpoint
+        return _degrees(sample, self._attr_max_temp)
 
     @property
     def current_temperature(self) -> float | None:

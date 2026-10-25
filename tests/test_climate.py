@@ -221,3 +221,82 @@ async def test_set_temperature_shows_new_target_immediately() -> None:
     ]
     assert entity.target_temperature == 21.5
     assert entity.preset_mode == "manual"
+
+
+MIN_HEAT = "ep9:sIT600TH:MinHeatSetpoint_x100"
+MAX_HEAT = "ep9:sIT600TH:MaxHeatSetpoint_x100"
+
+
+async def _climate_with(**properties: object) -> SalusCloudClimate:
+    api = FakeApi()
+    shadow = fixtures.thermostat_shadow(hold_type=0)
+    shadow["state"]["reported"]["11"]["properties"].update(properties)
+    api.shadows[fixtures.THERMOSTAT_CODE] = shadow
+    coordinator, _, _ = await create_coordinator(api)
+    return _entity(coordinator)
+
+
+@pytest.mark.parametrize(
+    ("minimum", "maximum", "low", "high"),
+    [
+        (500, 3500, 5.0, 35.0),
+        (700, 3200, 7.0, 32.0),
+        (0, 4000, 0.0, 40.0),
+    ],
+)
+async def test_min_and_max_temp_follow_reported_heat_limits(
+    minimum: int, maximum: int, low: float, high: float
+) -> None:
+    """The slider range is the reported heat limits. Mode stays heat, and presets stay schedule, manual, and away."""
+
+    entity = await _climate_with(**{MIN_HEAT: minimum, MAX_HEAT: maximum})
+
+    assert entity.min_temp == low
+    assert entity.max_temp == high
+    assert entity.hvac_mode is HVACMode.HEAT
+    assert entity.hvac_modes == [HVACMode.HEAT, HVACMode.OFF]
+    assert entity.preset_mode == "schedule"
+    assert entity.preset_modes == ["schedule", "manual", "away"]
+
+
+async def test_missing_heat_limits_keep_five_and_thirty_five() -> None:
+    """No limit cells, and an empty shadow, both keep 5°C and 35°C."""
+
+    coordinator, _, _ = await create_coordinator()
+    entity = _entity(coordinator)
+
+    assert (entity.min_temp, entity.max_temp) == (5.0, 35.0)
+
+    coordinator.data[fixtures.THERMOSTAT_ID]["_shadow_properties"] = {}
+    assert (entity.min_temp, entity.max_temp) == (5.0, 35.0)
+
+
+async def test_one_heat_limit_leaves_the_other_default() -> None:
+    entity = await _climate_with(**{MIN_HEAT: 700})
+
+    assert entity.min_temp == 7.0
+    assert entity.max_temp == 35.0
+
+
+async def test_unreadable_heat_limit_keeps_the_default() -> None:
+    entity = await _climate_with(**{MIN_HEAT: True, MAX_HEAT: 32.0})
+
+    assert entity.min_temp == 5.0
+    assert entity.max_temp == 35.0
+
+
+async def test_cooling_cells_do_not_add_a_cool_mode() -> None:
+    """A reported cooling setpoint does not change heat, off, or the three presets."""
+
+    entity = await _climate_with(
+        **{
+            "ep9:sIT600TH:CoolingControl": 1,
+            "ep9:sIT600TH:CoolingSetpoint_x100": 1800,
+        }
+    )
+
+    assert entity.hvac_mode is HVACMode.HEAT
+    assert entity.hvac_modes == [HVACMode.HEAT, HVACMode.OFF]
+    assert entity.preset_modes == ["schedule", "manual", "away"]
+    assert (entity.min_temp, entity.max_temp) == (5.0, 35.0)
+    assert entity.target_temperature == 21.0

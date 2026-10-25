@@ -33,6 +33,10 @@ LOCK = "ep9:sIT600TH:LockKey"
 ERROR_01 = "ep9:sIT600TH:Error01"
 ERROR_06 = "ep9:sIT600TH:Error06"
 ERROR_32 = "ep9:sIT600TH:Error32"
+MIN_HEAT = "ep9:sIT600TH:MinHeatSetpoint_x100"
+MAX_HEAT = "ep9:sIT600TH:MaxHeatSetpoint_x100"
+COOLING = "ep9:sIT600TH:CoolingSetpoint_x100"
+COOLING_CONTROL = "ep9:sIT600TH:CoolingControl"
 _DELETE = object()
 
 
@@ -69,6 +73,10 @@ def test_non_empty_map_with_no_thermostat_keys_is_unreported() -> None:
     assert observation.demand.is_on() is None
     assert observation.local_temperature is None
     assert observation.heating_setpoint is None
+    assert observation.min_heat_setpoint is None
+    assert observation.max_heat_setpoint is None
+    assert observation.cooling.exposed is False
+    assert observation.cooling.sample is None
     assert observation.preset_slug() is None
     assert heating_action(observation) is HeatingAction.UNKNOWN
 
@@ -165,6 +173,81 @@ def test_zero_temperature_is_a_real_sample_and_garbage_is_not() -> None:
     assert zero.local_temperature.celsius() == 0.0
     assert zero.heating_setpoint is None
     assert observe(_properties(**{LOCAL: True})).local_temperature is None
+
+
+def test_alternate_suffix_keys_are_not_heat_limits_or_cooling() -> None:
+    """Only MinHeatSetpoint_x100, MaxHeatSetpoint_x100, and CoolingSetpoint_x100 count."""
+
+    observation = observe(
+        _properties(
+            **{
+                "ep9:sIT600TH:MinHeatSetpoint_x100_a": 700,
+                "ep9:sIT600TH:MaxHeatSetpoint_x100_a": 3200,
+                "ep9:sIT600TH:CoolingSetpoint_x100_a": 1800,
+            }
+        )
+    )
+
+    assert observation.min_heat_setpoint is None
+    assert observation.max_heat_setpoint is None
+    assert observation.cooling.exposed is False
+    assert observation.cooling.sample is None
+
+
+def test_heat_limits_scale_from_hundredths() -> None:
+    """500 and 3500 are 5.0°C and 35.0°C. Other integers use the same scale, including 0."""
+
+    live = observe(_properties(**{MIN_HEAT: 500, MAX_HEAT: 3500}))
+    other = observe(_properties(**{MIN_HEAT: 700, MAX_HEAT: 3200}))
+    zero = observe(_properties(**{MIN_HEAT: 0, MAX_HEAT: 4000}))
+
+    assert live.min_heat_setpoint.celsius() == 5.0
+    assert live.max_heat_setpoint.celsius() == 35.0
+    assert other.min_heat_setpoint.celsius() == 7.0
+    assert other.max_heat_setpoint.celsius() == 32.0
+    assert zero.min_heat_setpoint.celsius() == 0.0
+    assert zero.max_heat_setpoint.celsius() == 40.0
+
+
+def test_missing_or_unreadable_heat_limit_is_absent() -> None:
+    """Each side stands alone. A bool or a float is not a limit, and a missing key is not 0°C."""
+
+    missing = observe(_properties())
+    minimum_only = observe(_properties(**{MIN_HEAT: 700}))
+    garbage = observe(_properties(**{MIN_HEAT: True, MAX_HEAT: 32.0}))
+
+    assert missing.min_heat_setpoint is None
+    assert missing.max_heat_setpoint is None
+    assert minimum_only.min_heat_setpoint.celsius() == 7.0
+    assert minimum_only.max_heat_setpoint is None
+    assert garbage.min_heat_setpoint is None
+    assert garbage.max_heat_setpoint is None
+
+
+@pytest.mark.parametrize(
+    ("extra", "exposed", "degrees"),
+    [
+        ({COOLING_CONTROL: 1}, True, None),
+        ({COOLING: 1800}, True, 18.0),
+        ({COOLING_CONTROL: 0, COOLING: 1800}, True, 18.0),
+        ({COOLING_CONTROL: 1, COOLING: 0}, True, 0.0),
+        ({COOLING_CONTROL: 0}, False, None),
+        ({COOLING_CONTROL: True}, False, None),
+        ({COOLING: True}, True, None),
+    ],
+)
+def test_cooling_setpoint_stays_a_measurement(extra: dict[str, object], exposed: bool, degrees: float | None) -> None:
+    """Control 1 or a present setpoint key exposes the sample. Heat mode and the hold preset stay put."""
+
+    observation = observe(_properties(**extra))
+
+    assert observation.cooling.exposed is exposed
+    if degrees is None:
+        assert observation.cooling.sample is None
+    else:
+        assert observation.cooling.sample.celsius() == degrees
+    assert observation.system_mode_label() == "Heat"
+    assert observation.preset_slug() == "manual"
 
 
 def test_scale_pair_round_trips_setpoints() -> None:
@@ -268,6 +351,10 @@ def test_history_cells_do_not_need_wire_keys() -> None:
     assert observation.demand is Demand.HEATING
     assert observation.local_temperature.celsius() == 0.0
     assert observation.heating_setpoint is None
+    assert observation.min_heat_setpoint is None
+    assert observation.max_heat_setpoint is None
+    assert observation.cooling.exposed is False
+    assert observation.cooling.sample is None
     assert observation.preset_slug() == "manual"
     assert observation.battery.volts() == 3.0
 
@@ -283,6 +370,9 @@ def test_observation_rejects_a_raw_float_temperature() -> None:
             demand=Demand.IDLE,
             local_temperature=22.5,
             heating_setpoint=None,
+            min_heat_setpoint=None,
+            max_heat_setpoint=None,
+            cooling=observe(_properties()).cooling,
             hold=observe(_properties()).hold,
             system_mode=observe(_properties()).system_mode,
             battery=None,

@@ -18,6 +18,7 @@ from .coordinator import SalusCloudCoordinator, SalusDevice
 from .devices import is_climate_device
 from .entity import SalusEntity, async_add_salus_entities
 from .heating import (
+    COOLING_SETPOINT_METRIC,
     DIAGNOSTIC_METRICS,
     TEMPERATURE_METRICS,
     DiagnosticKind,
@@ -50,6 +51,7 @@ async def async_setup_entry(
         return [SalusCloudTemperatureSensor(coordinator, device_id, device)]
 
     async_add_salus_entities(entry, coordinator, async_add_entities, records, entities)
+    _add_shown_temperature(entry, coordinator, async_add_entities, COOLING_SETPOINT_METRIC)
     for metric in DIAGNOSTIC_METRICS:
         _add_diagnostic(entry, coordinator, async_add_entities, metric)
 
@@ -79,6 +81,31 @@ def _add_diagnostic(
     async_add_salus_entities(entry, coordinator, async_add_entities, records, entities)
 
 
+def _add_shown_temperature(
+    entry: ConfigEntry,
+    coordinator: SalusCloudCoordinator,
+    async_add_entities: AddEntitiesCallback,
+    metric: TemperatureMetric,
+) -> None:
+    """Discover one setpoint on its own seen set, so the cell can show up after the thermostat."""
+
+    def records() -> dict[str, SalusDevice]:
+        data = coordinator.data or {}
+        selected: dict[str, SalusDevice] = {}
+        for device_id, device in data.items():
+            if not is_climate_device(device):
+                continue
+            observation = observe(device.get("_shadow_properties") or {})
+            if observation is not None and metric.shown is not None and metric.shown(observation):
+                selected[device_id] = device
+        return selected
+
+    def entities(device_id: str, device: SalusDevice) -> list[SalusHeatingTemperature]:
+        return [SalusHeatingTemperature(coordinator, device_id, device, metric)]
+
+    async_add_salus_entities(entry, coordinator, async_add_entities, records, entities)
+
+
 def _has_temperature(device: dict[str, Any]) -> bool:
     """Check if device is a standalone temperature sensor."""
     device_type = device.get("type", "").lower()
@@ -98,7 +125,7 @@ def _value(data: dict[str, Any], fields: tuple[str, ...], scale_above_100: bool)
 
 
 class SalusHeatingTemperature(SalusEntity, SensorEntity):
-    """Room temperature or heating setpoint from the thermostat shadow."""
+    """Room temperature or a setpoint from the thermostat shadow."""
 
     _attr_device_class = SensorDeviceClass.TEMPERATURE
     _attr_state_class = SensorStateClass.MEASUREMENT
