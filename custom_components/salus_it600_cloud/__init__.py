@@ -12,6 +12,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .api import SalusCloudApi, SalusCloudAuthenticationError, SalusCloudConnectionError
 from .const import DOMAIN
 from .coordinator import SalusCloudCoordinator
+from .devices import is_user_rule
 
 PLATFORMS: list[Platform] = [
     Platform.CLIMATE,
@@ -58,3 +59,38 @@ async def async_setup_entry(hass: HomeAssistant, entry: SalusConfigEntry) -> boo
 async def async_unload_entry(hass: HomeAssistant, entry: SalusConfigEntry) -> bool:
     """Unload a config entry (the coordinator stops its MQTT connection when the entry unloads)."""
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+def _provided_device_ids(coordinator: SalusCloudCoordinator) -> set[str] | None:
+    """Return registry ids the latest snapshot still provides.
+
+    None means the snapshot is empty, so it cannot show that a device left.
+    """
+    data = coordinator.data
+    if not data:
+        return None
+    provided = set(data)
+    provided.update(gateway.id for gateway in coordinator.gateways)
+    for rule in coordinator.rules:
+        if is_user_rule(rule) and (gateway_id := rule.get("_gateway_id")):
+            provided.add(f"{gateway_id}_onetouch_rules")
+    return provided
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant,
+    entry: SalusConfigEntry,
+    device_entry: dr.DeviceEntry,
+) -> bool:
+    """Return true when Home Assistant may delete a device this snapshot no longer provides."""
+    coordinator = entry.runtime_data
+    if coordinator is None:
+        return False
+    provided = _provided_device_ids(coordinator)
+    if provided is None:
+        return False
+    return not any(
+        identifier in provided
+        for domain, identifier in device_entry.identifiers
+        if domain == DOMAIN
+    )

@@ -15,9 +15,9 @@ from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .coordinator import SalusCloudCoordinator
+from .coordinator import SalusCloudCoordinator, SalusDevice
 from .devices import is_climate_device
-from .entity import SalusEntity
+from .entity import SalusEntity, async_add_salus_entities
 from .heating import PRESET_SLUGS, HeatingAction, heating_action, hold_raw_for_preset, observe
 
 _HVAC_ACTION: dict[HeatingAction, HVACAction | None] = {
@@ -35,13 +35,15 @@ async def async_setup_entry(
 ) -> None:
     """Set up Salus iT600 Cloud thermostats."""
     coordinator: SalusCloudCoordinator = entry.runtime_data
-    async_add_entities(
-        [
-            SalusCloudClimate(coordinator, device_id, device)
-            for device_id, device in coordinator.data.items()
-            if is_climate_device(device)
-        ]
-    )
+
+    def records() -> dict[str, SalusDevice]:
+        data = coordinator.data or {}
+        return {device_id: device for device_id, device in data.items() if is_climate_device(device)}
+
+    def entities(device_id: str, device: SalusDevice) -> list[SalusCloudClimate]:
+        return [SalusCloudClimate(coordinator, device_id, device)]
+
+    async_add_salus_entities(entry, coordinator, async_add_entities, records, entities)
 
 
 class SalusCloudClimate(SalusEntity, ClimateEntity):

@@ -9,9 +9,9 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .coordinator import SalusCloudCoordinator
+from .coordinator import SalusCloudCoordinator, SalusDevice
 from .devices import is_switch_device
-from .entity import SalusEntity
+from .entity import SalusEntity, async_add_salus_entities
 
 ON_OFF = "ep9:sOnOffS:OnOff"
 
@@ -23,13 +23,15 @@ async def async_setup_entry(
 ) -> None:
     """Set up Salus iT600 Cloud relays and smart plugs."""
     coordinator: SalusCloudCoordinator = entry.runtime_data
-    async_add_entities(
-        [
-            SalusCloudSwitch(coordinator, device_id, device)
-            for device_id, device in coordinator.data.items()
-            if is_switch_device(device)
-        ]
-    )
+
+    def records() -> dict[str, SalusDevice]:
+        data = coordinator.data or {}
+        return {device_id: device for device_id, device in data.items() if is_switch_device(device)}
+
+    def entities(device_id: str, device: SalusDevice) -> list[SalusCloudSwitch]:
+        return [SalusCloudSwitch(coordinator, device_id, device)]
+
+    async_add_salus_entities(entry, coordinator, async_add_entities, records, entities)
 
 
 class SalusCloudSwitch(SalusEntity, SwitchEntity):

@@ -16,7 +16,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .coordinator import SalusCloudCoordinator, SalusDevice
 from .devices import is_climate_device
-from .entity import SalusEntity
+from .entity import SalusEntity, async_add_salus_entities
 from .heating import TEMPERATURE_METRICS, TemperatureMetric, observe
 
 
@@ -27,15 +27,21 @@ async def async_setup_entry(
 ) -> None:
     """Set up Salus iT600 Cloud sensors."""
     coordinator: SalusCloudCoordinator = entry.runtime_data
-    entities: list[SensorEntity] = []
-    for device_id, device in coordinator.data.items():
+
+    def records() -> dict[str, SalusDevice]:
+        data = coordinator.data or {}
+        return {
+            device_id: device
+            for device_id, device in data.items()
+            if is_climate_device(device) or _has_temperature(device)
+        }
+
+    def entities(device_id: str, device: SalusDevice) -> list[SensorEntity]:
         if is_climate_device(device):
-            for metric in TEMPERATURE_METRICS:
-                entities.append(SalusHeatingTemperature(coordinator, device_id, device, metric))
-            continue
-        if _has_temperature(device):
-            entities.append(SalusCloudTemperatureSensor(coordinator, device_id, device))
-    async_add_entities(entities)
+            return [SalusHeatingTemperature(coordinator, device_id, device, metric) for metric in TEMPERATURE_METRICS]
+        return [SalusCloudTemperatureSensor(coordinator, device_id, device)]
+
+    async_add_salus_entities(entry, coordinator, async_add_entities, records, entities)
 
 
 def _has_temperature(device: dict[str, Any]) -> bool:

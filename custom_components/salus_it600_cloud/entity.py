@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import callback
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
@@ -39,3 +43,37 @@ class SalusEntity(CoordinatorEntity[SalusCloudCoordinator]):
     def available(self) -> bool:
         """Return whether recent state data of the device is known."""
         return super().available and bool(self.device_data.get("_fresh"))
+
+
+def async_add_salus_entities(
+    entry: ConfigEntry,
+    coordinator: SalusCloudCoordinator,
+    async_add_entities: AddEntitiesCallback,
+    records: Callable[[], Mapping[str, Any]],
+    entity_factory: Callable[[str, Any], Iterable[Any]],
+) -> None:
+    """Add entities for records present now and for records that show up later.
+
+    Each platform callback keeps its own set of seen ids. The set only grows.
+    A later coordinator update with no records leaves that set in place, so an
+    empty snapshot neither removes entities nor creates them again.
+    """
+    known: set[str] = set()
+
+    @callback
+    def _add_new() -> None:
+        current = records()
+        new_ids = [record_id for record_id in current if record_id not in known]
+        if not new_ids:
+            return
+        entities = [
+            entity
+            for record_id in new_ids
+            for entity in entity_factory(record_id, current[record_id])
+        ]
+        known.update(new_ids)
+        if entities:
+            async_add_entities(entities)
+
+    _add_new()
+    entry.async_on_unload(coordinator.async_add_listener(_add_new))

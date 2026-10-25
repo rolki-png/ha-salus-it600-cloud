@@ -22,3 +22,9 @@ def is_switch_device(device: dict[str, Any]) -> bool:
     return (device.get("type") or "").lower() in ("switch", "relay") or (device.get("model") or "").upper().startswith(
         SWITCH_MODELS
     )
+
+
+def is_user_rule(rule: dict[str, Any]) -> bool:
+    """Return whether the OneTouch rule was created by the user."""
+    name = rule.get("rule", {}).get("name", "")
+    return bool(rule.get("rule_trigger_key")) and not name.startswith("_")

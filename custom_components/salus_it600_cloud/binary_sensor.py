@@ -14,7 +14,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .coordinator import SalusCloudCoordinator, SalusDevice
 from .devices import is_climate_device
-from .entity import SalusEntity
+from .entity import SalusEntity, async_add_salus_entities
 from .heating import RUNNING_STATE_METRIC, observe
 
 BINARY_SENSOR_TYPES = ("door_sensor", "window_sensor", "motion_sensor", "binary_sensor")
@@ -28,13 +28,24 @@ async def async_setup_entry(
 ) -> None:
     """Set up Salus iT600 Cloud binary sensors."""
     coordinator: SalusCloudCoordinator = entry.runtime_data
-    entities: list[BinarySensorEntity] = []
-    for device_id, device in coordinator.data.items():
+
+    def records() -> dict[str, SalusDevice]:
+        data = coordinator.data or {}
+        return {
+            device_id: device
+            for device_id, device in data.items()
+            if _is_binary_sensor_device(device) or is_climate_device(device)
+        }
+
+    def entities(device_id: str, device: SalusDevice) -> list[BinarySensorEntity]:
+        created: list[BinarySensorEntity] = []
         if _is_binary_sensor_device(device):
-            entities.append(SalusCloudBinarySensor(coordinator, device_id, device, _get_device_class(device)))
+            created.append(SalusCloudBinarySensor(coordinator, device_id, device, _get_device_class(device)))
         if is_climate_device(device):
-            entities.append(SalusRunningState(coordinator, device_id, device))
-    async_add_entities(entities)
+            created.append(SalusRunningState(coordinator, device_id, device))
+        return created
+
+    async_add_salus_entities(entry, coordinator, async_add_entities, records, entities)
 
 
 def _is_binary_sensor_device(device: dict[str, Any]) -> bool:
