@@ -6,9 +6,14 @@ Home Assistant custom integration for Salus iT600 devices through the Salus Clou
 
 - Climate control for SQ610 and related thermostats
 - MQTT shadow push with REST poll fallback
-- Room temperature and heating setpoint as measurement sensors
+- Room temperature, heating setpoint, and a cooling setpoint sensor when the shadow reports cooling
 - Heat-demand binary sensor from `RunningState`
+- Battery level, signal strength, link quality, a problem sensor, and a keypad lock when the thermostat reports them
 - Switches, binary sensors, and OneTouch buttons when present on the account
+- Options for poll timing and the failed-poll repair
+- A diagnostics download that omits the account password and gateway secrets
+
+Device notes for the account used to write 1.3.0 are in [Supported devices](docs/supported-devices.md).
 
 ## Install with HACS (custom repository)
 
@@ -27,7 +32,7 @@ Copy `custom_components/salus_it600_cloud` into your Home Assistant `config/cust
 
 ## Requirements
 
-- Home Assistant 2024.1 or newer
+- Home Assistant 2025.8 or newer
 - Salus Smart Home (EU) cloud account
 - Network access to Cognito, Salus service API, and AWS IoT
 

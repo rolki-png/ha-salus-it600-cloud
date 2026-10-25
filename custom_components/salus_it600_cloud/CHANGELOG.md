@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-10-26
+
+### Added
+
+- Config entry diagnostics. The download leaves out the account email, the password, and gateway secrets. It keeps thermostat state, device identity, and whether AWS IoT refused push updates.
+- Options for the poll interval, the poll interval while updates are pushed, the command confirmation delay, and how many failed polls open the cloud-unavailable repair.
+- Discovery of devices that appear after the first setup. Home Assistant may remove a device only after a non-empty device list omits it.
+- Thermostat sensors for battery level, signal strength, and link quality. Battery level is the raw `BatteryLevel` integer, with no percent unit.
+- A problem binary sensor for thermostat `Error01` through `Error32`, and a keypad lock that writes `SetLockKey`.
+- Translations for thermostat presets and those child entities. Entity ids stay the same.
+- A cooling setpoint sensor when the shadow reports cooling. Cool stays disabled. The `SystemMode` value for cool is not proven.
+- Setpoint writes wait 0.3 seconds, so a slider drag sends the last temperature.
+- A repair when Salus Cloud stays unreachable.
+- Manifest loggers for this integration and `paho.mqtt`, a brand logo, and [supported devices](../../docs/supported-devices.md).
+- A Ruff check in CI.
+
+### Removed
+
+- Humidity and battery sensors that read REST fields the cloud shadow does not report. This account's shadow has no humidity property.
+
+### Changed
+
+- A WLS contact uses the moisture device class. A window contact is a window, and a door contact is a door. A binary sensor with no state field stays unknown.
+- Climate minimum and maximum follow `MinHeatSetpoint_x100` and `MaxHeatSetpoint_x100` when those cells are integers. A missing minimum stays at 5°C. A missing maximum stays at 35°C.
+- Home Assistant 2025.8 is the minimum. The options flow uses `OptionsFlowWithReload`, which that release added.
+
 ## [1.1.0] - 2026-09-11
 
 ### Added
@@ -197,31 +223,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## Planned Features
+## Planned features
 
-### Future Releases
+These items are not in 1.3.0.
 
-#### v1.1.0
-- [ ] WebSocket support for real-time updates
-- [ ] Reduce polling interval when WebSocket active
-- [ ] Add diagnostic sensors (signal strength, last seen)
-- [ ] Improve error messages and recovery
-
-#### v1.2.0
-- [ ] Schedule/program viewing
-- [ ] Schedule editing support
-- [ ] Manual schedule override
-- [ ] Vacation mode support
-
-#### v1.3.0
-- [ ] US region support
-- [ ] Multi-region account support
-- [ ] Automatic region detection
-
-#### v2.0.0
-- [ ] Local API support (if available)
-- [ ] Hybrid local/cloud mode
-- [ ] Offline operation support
+- Schedule viewing and editing
+- US region accounts
+- A local API, if Salus publishes one
 
 ---
 

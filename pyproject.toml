@@ -1,0 +1,10 @@
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+src = ["custom_components", "tests"]
+
+[tool.ruff.lint]
+# Ruff 0.17's default set is otherwise clean on this tree.
+# I001 is unsorted imports. UP017 wants datetime.UTC. RUF012 flags Home Assistant
+# class-attribute lists. BLE001 is the MQTT reconnect handler catching Exception.
+ignore = ["BLE001", "I001", "RUF012", "UP017"]
