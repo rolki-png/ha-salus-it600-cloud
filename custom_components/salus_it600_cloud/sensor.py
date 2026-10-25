@@ -10,14 +10,22 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfTemperature
+from homeassistant.const import EntityCategory, SIGNAL_STRENGTH_DECIBELS_MILLIWATT, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .coordinator import SalusCloudCoordinator, SalusDevice
 from .devices import is_climate_device
 from .entity import SalusEntity, async_add_salus_entities
-from .heating import TEMPERATURE_METRICS, TemperatureMetric, observe
+from .heating import (
+    DIAGNOSTIC_METRICS,
+    TEMPERATURE_METRICS,
+    DiagnosticKind,
+    DiagnosticMetric,
+    TemperatureMetric,
+    diagnostics,
+    observe,
+)
 
 
 async def async_setup_entry(
@@ -40,6 +48,33 @@ async def async_setup_entry(
         if is_climate_device(device):
             return [SalusHeatingTemperature(coordinator, device_id, device, metric) for metric in TEMPERATURE_METRICS]
         return [SalusCloudTemperatureSensor(coordinator, device_id, device)]
+
+    async_add_salus_entities(entry, coordinator, async_add_entities, records, entities)
+    for metric in DIAGNOSTIC_METRICS:
+        _add_diagnostic(entry, coordinator, async_add_entities, metric)
+
+
+def _add_diagnostic(
+    entry: ConfigEntry,
+    coordinator: SalusCloudCoordinator,
+    async_add_entities: AddEntitiesCallback,
+    metric: DiagnosticMetric,
+) -> None:
+    """Discover one diagnostic on its own seen set, so a cell can show up after the thermostat."""
+
+    def records() -> dict[str, SalusDevice]:
+        data = coordinator.data or {}
+        selected: dict[str, SalusDevice] = {}
+        for device_id, device in data.items():
+            if not is_climate_device(device):
+                continue
+            reading = diagnostics(device.get("_shadow_properties") or {})
+            if reading is not None and metric.read(reading).present:
+                selected[device_id] = device
+        return selected
+
+    def entities(device_id: str, device: SalusDevice) -> list[SalusDiagnosticSensor]:
+        return [SalusDiagnosticSensor(coordinator, device_id, device, metric)]
 
     async_add_salus_entities(entry, coordinator, async_add_entities, records, entities)
 
@@ -89,6 +124,37 @@ class SalusHeatingTemperature(SalusEntity, SensorEntity):
         observation = observe(self.shadow_properties)
         sample = None if observation is None else self._metric.read(observation)
         return None if sample is None else sample.celsius()
+
+
+class SalusDiagnosticSensor(SalusEntity, SensorEntity):
+    """Battery level, signal strength, or link quality from the thermostat shadow."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(
+        self,
+        coordinator: SalusCloudCoordinator,
+        device_id: str,
+        device: SalusDevice,
+        metric: DiagnosticMetric,
+    ) -> None:
+        """Initialize the diagnostic sensor."""
+        super().__init__(coordinator, device_id, device)
+        self._metric = metric
+        self._attr_name = f"{self._attr_name} {metric.name}"
+        self._attr_unique_id = f"{self._attr_unique_id}_{metric.slug}"
+        if metric.kind is DiagnosticKind.SIGNAL_DBM:
+            self._attr_device_class = SensorDeviceClass.SIGNAL_STRENGTH
+            self._attr_native_unit_of_measurement = SIGNAL_STRENGTH_DECIBELS_MILLIWATT
+
+    @property
+    def native_value(self) -> int | None:
+        """Return the raw integer. None when the cell is absent or not an int."""
+        reading = diagnostics(self.shadow_properties)
+        if reading is None:
+            return None
+        return self._metric.read(reading).value
 
 
 class SalusCloudSensor(SalusEntity, SensorEntity):

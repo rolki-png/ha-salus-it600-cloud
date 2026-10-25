@@ -4,7 +4,7 @@ from pathlib import Path
 
 PACKAGE = Path(__file__).resolve().parents[1] / "custom_components" / "salus_it600_cloud"
 WIRE = "ep9:sIT600TH:"
-FENCED = ("climate.py", "sensor.py", "binary_sensor.py", "coordinator.py", "state.py")
+FENCED = ("climate.py", "sensor.py", "binary_sensor.py", "lock.py", "coordinator.py", "state.py")
 
 
 def test_platforms_do_not_name_thermostat_wire_keys() -> None:

@@ -245,6 +245,13 @@ class SalusCloudCoordinator(DataUpdateCoordinator[dict[str, SalusDevice]]):
         """Turn relay or smart plug on or off."""
         await self._async_send([self._require_device(device_id)], {"ep9:sOnOffS:SetOnOff": 1 if turn_on else 0})
 
+    async def async_set_lock(self, device_id: str, locked: bool) -> None:
+        """Lock or unlock one thermostat keypad. Other thermostats are left alone."""
+        await self._async_send(
+            [self._require_device(device_id)],
+            {ThermostatCommand.LOCK: 1 if locked else 0},
+        )
+
     async def async_trigger_rule(self, gateway_id: str, rule_trigger_key: str) -> None:
         """Trigger a OneTouch rule of a gateway."""
         gateway = self.get_gateway(gateway_id)

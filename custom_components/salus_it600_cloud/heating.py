@@ -1,6 +1,6 @@
 """Thermostat observation parsed from merged shadow properties.
 
-Wire names stay in this module. Platforms call observe() and the catalog.
+Wire names stay in this module. Platforms call observe(), diagnostics(), and the catalogs.
 """
 
 from __future__ import annotations
@@ -85,6 +85,84 @@ class DeciVolt:
 
     def volts(self) -> float:
         return self.tenths / 10
+
+
+@dataclass(frozen=True)
+class IntCell:
+    """One integer shadow cell.
+
+    value is None when the key is absent or not an int. Zero is a reading.
+    bool is rejected, because bool is a subclass of int and True == 1.
+    """
+
+    present: bool
+    value: int | None
+
+    def __post_init__(self) -> None:
+        if self.value is None:
+            return
+        if not self.present or type(self.value) is not int:
+            raise ValueError("cell value requires a present int")
+
+
+@dataclass(frozen=True)
+class KeypadLock:
+    """LockKey. Locked only when the cell is the integer 1. Unlocked only when it is 0."""
+
+    cell: IntCell
+
+    def is_locked(self) -> bool | None:
+        if self.cell.value == 1:
+            return True
+        if self.cell.value == 0:
+            return False
+        return None
+
+
+@dataclass(frozen=True)
+class ThermostatErrors:
+    """Error01 through Error32.
+
+    known is False when none of those keys exist. active lists the codes whose
+    integer value is 1, in code order. A bool is not an active error.
+    """
+
+    known: bool
+    active: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if self.active != tuple(sorted(self.active)):
+            raise ValueError("active error codes must be sorted")
+        if not self.known and self.active:
+            raise ValueError("active errors require a reported error key")
+
+    def is_on(self) -> bool | None:
+        """Problem state. None when the thermostat reported no error keys."""
+        if not self.known:
+            return None
+        return bool(self.active)
+
+
+@dataclass(frozen=True)
+class ClimateDiagnostics:
+    """Battery, radio, keypad lock, and error keys from one property map.
+
+    battery_level is the raw BatteryLevel cell. It is not a percentage and it
+    is not BatteryVoltage in tenths of a volt.
+    """
+
+    battery_level: IntCell
+    rssi_dbm: IntCell
+    lqi: IntCell
+    lock: KeypadLock
+    errors: ThermostatErrors
+
+    def __post_init__(self) -> None:
+        for cell in (self.battery_level, self.rssi_dbm, self.lqi, self.lock.cell):
+            if type(cell) is not IntCell:
+                raise TypeError("diagnostic cells must be IntCell")
+        if type(self.lock) is not KeypadLock or type(self.errors) is not ThermostatErrors:
+            raise TypeError("lock and errors must be their domain types")
 
 
 @dataclass(frozen=True)
@@ -183,7 +261,9 @@ class TemperatureMetric:
 
 
 @dataclass(frozen=True)
-class DemandMetric:
+class MetricLabel:
+    """Stable unique-id slug and the words appended to the device name."""
+
     slug: str
     name: str
 
@@ -200,7 +280,45 @@ TEMPERATURE_METRICS: tuple[TemperatureMetric, ...] = (
     TemperatureMetric("local_temperature", "Temperature", _read_local),
     TemperatureMetric("heating_setpoint", "Heating setpoint", _read_setpoint),
 )
-RUNNING_STATE_METRIC = DemandMetric("running_state", "Running state")
+RUNNING_STATE_METRIC = MetricLabel("running_state", "Running state")
+PROBLEM_METRIC = MetricLabel("problem", "Problem")
+LOCK_METRIC = MetricLabel("lock", "Keypad lock")
+
+
+class DiagnosticKind(Enum):
+    """RAW is an unscaled integer. SIGNAL_DBM is signal strength in dBm."""
+
+    RAW = "raw"
+    SIGNAL_DBM = "signal_dbm"
+
+
+@dataclass(frozen=True)
+class DiagnosticMetric:
+    """One numeric diagnostic. read returns the cell, not a wire key."""
+
+    slug: str
+    name: str
+    kind: DiagnosticKind
+    read: Callable[[ClimateDiagnostics], IntCell]
+
+
+def _read_battery_level(reading: ClimateDiagnostics) -> IntCell:
+    return reading.battery_level
+
+
+def _read_rssi(reading: ClimateDiagnostics) -> IntCell:
+    return reading.rssi_dbm
+
+
+def _read_lqi(reading: ClimateDiagnostics) -> IntCell:
+    return reading.lqi
+
+
+DIAGNOSTIC_METRICS: tuple[DiagnosticMetric, ...] = (
+    DiagnosticMetric("battery_level", "Battery level", DiagnosticKind.RAW, _read_battery_level),
+    DiagnosticMetric("signal_strength", "Signal strength", DiagnosticKind.SIGNAL_DBM, _read_rssi),
+    DiagnosticMetric("link_quality", "Link quality", DiagnosticKind.RAW, _read_lqi),
+)
 
 _PRESET_RAW: dict[str, int] = {"schedule": 0, "manual": 2, "away": 7}
 PRESET_SLUGS: tuple[str, ...] = tuple(_PRESET_RAW)
@@ -222,6 +340,12 @@ _READ_ONLY = {
     "local_temperature": "ep9:sIT600TH:LocalTemperature_x100",
     "battery": "ep9:sBasicS:BatteryVoltage",
 }
+_LOCK_WIRE = ("ep9:sIT600TH:SetLockKey", "ep9:sIT600TH:LockKey")
+_BATTERY_LEVEL_KEY = "ep9:sIT600TH:BatteryLevel"
+_RSSI_KEY = "ep9:sIT600I:LastMessageRSSI_d"
+_LQI_KEY = "ep9:sIT600I:LastMessageLQI_d"
+_THERMOSTAT_CLUSTER = "ep9:sIT600TH:"
+_ERROR_CODE_LIMIT = 32
 
 
 class ThermostatCommand:
@@ -230,6 +354,7 @@ class ThermostatCommand:
     HOLD = _HOLD_WIRE[0]
     SETPOINT = _SETPOINT_WIRE[0]
     SYSTEM_MODE = _SYSTEM_WIRE[0]
+    LOCK = _LOCK_WIRE[0]
 
 
 def hold_raw_for_preset(slug: str) -> int:
@@ -239,7 +364,7 @@ def hold_raw_for_preset(slug: str) -> int:
 
 def desired_to_reported_thermostat() -> dict[str, str]:
     """Reported names for thermostat commands. state.py is the only caller."""
-    return dict((_HOLD_WIRE, _SETPOINT_WIRE, _SYSTEM_WIRE))
+    return dict((_HOLD_WIRE, _SETPOINT_WIRE, _SYSTEM_WIRE, _LOCK_WIRE))
 
 
 def decode_running_cell(value: Any, *, present: bool) -> Demand:
@@ -358,3 +483,56 @@ def _hold(present: bool, value: Any) -> Hold:
     if type(value) is int:
         return Hold(raw=value, present=True)
     return Hold(raw=None, present=True)
+
+
+def diagnostics(properties: Mapping[str, Any]) -> ClimateDiagnostics | None:
+    """Parse battery, radio, lock, and error cells.
+
+    None iff properties is empty. A missing key on a non-empty map is an absent
+    cell, not a zero. BatteryLevel 0 is a raw level, not an absent battery.
+    """
+    if not properties:
+        return None
+    return ClimateDiagnostics(
+        battery_level=_int_cell(properties, _BATTERY_LEVEL_KEY),
+        rssi_dbm=_int_cell(properties, _RSSI_KEY),
+        lqi=_int_cell(properties, _LQI_KEY),
+        lock=KeypadLock(_int_cell(properties, _LOCK_WIRE[1])),
+        errors=_errors(properties),
+    )
+
+
+def _int_cell(properties: Mapping[str, Any], key: str) -> IntCell:
+    present, value = _cell(properties, key)
+    if present and type(value) is int:
+        return IntCell(present=True, value=value)
+    return IntCell(present=present, value=None)
+
+
+def _error_code(key: str) -> str | None:
+    """Return Error01..Error32, or None when the key is a different property."""
+    if not key.startswith(_THERMOSTAT_CLUSTER):
+        return None
+    name = key[len(_THERMOSTAT_CLUSTER) :]
+    if len(name) != 7 or not name.startswith("Error"):
+        return None
+    suffix = name[5:]
+    if not suffix.isdigit():
+        return None
+    number = int(suffix)
+    if number < 1 or number > _ERROR_CODE_LIMIT:
+        return None
+    return name
+
+
+def _errors(properties: Mapping[str, Any]) -> ThermostatErrors:
+    active: list[str] = []
+    known = False
+    for key, value in properties.items():
+        code = _error_code(key)
+        if code is None:
+            continue
+        known = True
+        if type(value) is int and value == 1:
+            active.append(code)
+    return ThermostatErrors(known=known, active=tuple(sorted(active)))

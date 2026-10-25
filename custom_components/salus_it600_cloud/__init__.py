@@ -20,6 +20,7 @@ PLATFORMS: list[Platform] = [
     Platform.SWITCH,
     Platform.BINARY_SENSOR,
     Platform.BUTTON,
+    Platform.LOCK,
 ]
 
 type SalusConfigEntry = ConfigEntry[SalusCloudCoordinator]

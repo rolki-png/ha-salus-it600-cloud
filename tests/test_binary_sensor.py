@@ -4,9 +4,14 @@ from unittest.mock import MagicMock
 
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 from homeassistant.components.climate import HVACAction
+from homeassistant.const import EntityCategory
 
 from custom_components.salus_it600_cloud import binary_sensor
-from custom_components.salus_it600_cloud.binary_sensor import SalusCloudBinarySensor, SalusRunningState
+from custom_components.salus_it600_cloud.binary_sensor import (
+    SalusCloudBinarySensor,
+    SalusRunningState,
+    SalusThermostatProblem,
+)
 from custom_components.salus_it600_cloud.climate import SalusCloudClimate
 
 from . import fixtures
@@ -176,3 +181,119 @@ async def test_reported_open_and_closed_values() -> None:
 
     assert entities[_contact_uid("open")].is_on is True
     assert entities[_contact_uid("shut")].is_on is False
+
+
+ERROR_01 = "ep9:sIT600TH:Error01"
+ERROR_06 = "ep9:sIT600TH:Error06"
+ERROR_32 = "ep9:sIT600TH:Error32"
+
+
+async def _thermostat_with(**properties: object):
+    api = FakeApi()
+    shadow = fixtures.thermostat_shadow(hold_type=0)
+    shadow["state"]["reported"]["11"]["properties"].update(properties)
+    api.shadows[fixtures.THERMOSTAT_CODE] = shadow
+    return await create_coordinator(api)
+
+
+def _problem_uid(device_id: str = fixtures.THERMOSTAT_ID) -> str:
+    return f"salus_it600_cloud_{fixtures.GATEWAY_ID}_{device_id}_problem"
+
+
+async def test_error_codes_become_one_problem_sensor() -> None:
+    """Integer 1 is a problem. The attribute lists those codes and skips zeros, bools, and other clusters."""
+
+    coordinator, _, _ = await _thermostat_with(
+        **{
+            ERROR_01: 0,
+            ERROR_06: 1,
+            ERROR_32: 1,
+            "ep9:sIT600TH:Error09": True,
+            "ep8:sIT600WC:Error10": 1,
+        }
+    )
+    entry = MagicMock()
+    entry.runtime_data = coordinator
+    add_entities = MagicMock()
+    await binary_sensor.async_setup_entry(MagicMock(), entry, add_entities)
+    entities = {
+        entity.unique_id: entity
+        for call in add_entities.call_args_list
+        for entity in call.args[0]
+    }
+    entity = entities[_problem_uid()]
+
+    assert isinstance(entity, SalusThermostatProblem)
+    assert not isinstance(entity, SalusCloudBinarySensor)
+    assert entity.device_class is BinarySensorDeviceClass.PROBLEM
+    assert entity.entity_category is EntityCategory.DIAGNOSTIC
+    assert entity.is_on is True
+    assert entity.extra_state_attributes == {"error_codes": ["Error06", "Error32"]}
+    assert entity.name == "Apartmán A Termostat pokoj Problem"
+    assert _problem_uid(fixtures.THERMOSTAT_2_ID) not in entities
+    assert _uid(fixtures.THERMOSTAT_ID) in entities
+
+
+async def test_reported_zeros_are_off_and_list_no_codes() -> None:
+    coordinator, _, _ = await _thermostat_with(**{ERROR_01: 0})
+    entry = MagicMock()
+    entry.runtime_data = coordinator
+    add_entities = MagicMock()
+    await binary_sensor.async_setup_entry(MagicMock(), entry, add_entities)
+    entity = next(item for item in add_entities.call_args.args[0] if item.unique_id == _problem_uid())
+
+    assert entity.is_on is False
+    assert entity.extra_state_attributes == {"error_codes": []}
+
+
+async def test_problem_is_unknown_when_every_error_key_leaves() -> None:
+    """No Error keys at all is unknown, not off."""
+
+    coordinator, _, _ = await _thermostat_with(**{ERROR_01: 1})
+    entry = MagicMock()
+    entry.runtime_data = coordinator
+    add_entities = MagicMock()
+    await binary_sensor.async_setup_entry(MagicMock(), entry, add_entities)
+    entity = next(item for item in add_entities.call_args.args[0] if item.unique_id == _problem_uid())
+    entity.hass = MagicMock()
+    del coordinator.data[fixtures.THERMOSTAT_ID]["_shadow_properties"][ERROR_01]
+
+    assert entity.is_on is None
+    assert entity.extra_state_attributes == {}
+    assert entity.available is True
+
+
+async def test_error_key_that_appears_later_creates_the_problem_sensor() -> None:
+    """Running state can already exist. The problem sensor still appears when the first error key does."""
+
+    coordinator, _, _ = await create_coordinator()
+    entry = MagicMock()
+    entry.runtime_data = coordinator
+    add_entities = MagicMock()
+    await binary_sensor.async_setup_entry(MagicMock(), entry, add_entities)
+    assert _problem_uid() not in [entity.unique_id for call in add_entities.call_args_list for entity in call.args[0]]
+
+    properties = dict(coordinator.data[fixtures.THERMOSTAT_ID]["_shadow_properties"])
+    properties[ERROR_01] = 1
+    coordinator.data[fixtures.THERMOSTAT_ID]["_shadow_properties"] = properties
+    coordinator.async_set_updated_data(dict(coordinator.data))
+    entity = next(
+        entity
+        for call in add_entities.call_args_list
+        for entity in call.args[0]
+        if entity.unique_id == _problem_uid()
+    )
+
+    assert entity.is_on is True
+    assert entity.extra_state_attributes == {"error_codes": ["Error01"]}
+
+
+async def test_a_wiring_centre_error_does_not_create_the_problem_sensor() -> None:
+    coordinator, _, _ = await _thermostat_with(**{"ep8:sIT600WC:Error10": 1})
+    entry = MagicMock()
+    entry.runtime_data = coordinator
+    add_entities = MagicMock()
+    await binary_sensor.async_setup_entry(MagicMock(), entry, add_entities)
+    unique_ids = [entity.unique_id for entity in add_entities.call_args.args[0]]
+
+    assert _problem_uid() not in unique_ids

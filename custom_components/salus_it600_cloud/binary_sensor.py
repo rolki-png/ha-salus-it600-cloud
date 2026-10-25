@@ -9,13 +9,14 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
 )
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .coordinator import SalusCloudCoordinator, SalusDevice
 from .devices import is_climate_device
 from .entity import SalusEntity, async_add_salus_entities
-from .heating import RUNNING_STATE_METRIC, observe
+from .heating import PROBLEM_METRIC, RUNNING_STATE_METRIC, diagnostics, observe
 
 BINARY_SENSOR_TYPES = ("door_sensor", "window_sensor", "motion_sensor", "binary_sensor")
 TRUE_VALUES = ("on", "true", "1", "open", "active")
@@ -46,6 +47,22 @@ async def async_setup_entry(
         return created
 
     async_add_salus_entities(entry, coordinator, async_add_entities, records, entities)
+
+    def problem_records() -> dict[str, SalusDevice]:
+        data = coordinator.data or {}
+        selected: dict[str, SalusDevice] = {}
+        for device_id, device in data.items():
+            if not is_climate_device(device):
+                continue
+            reading = diagnostics(device.get("_shadow_properties") or {})
+            if reading is not None and reading.errors.known:
+                selected[device_id] = device
+        return selected
+
+    def problem_entities(device_id: str, device: SalusDevice) -> list[SalusThermostatProblem]:
+        return [SalusThermostatProblem(coordinator, device_id, device)]
+
+    async_add_salus_entities(entry, coordinator, async_add_entities, problem_records, problem_entities)
 
 
 def _is_binary_sensor_device(device: dict[str, Any]) -> bool:
@@ -99,6 +116,33 @@ class SalusRunningState(SalusEntity, BinarySensorEntity):
         """Return whether the thermostat is calling for heat. None when that was not reported as an int."""
         observation = observe(self.shadow_properties)
         return None if observation is None else observation.demand.is_on()
+
+
+class SalusThermostatProblem(SalusEntity, BinarySensorEntity):
+    """One problem sensor for every reported Error01..Error32 cell."""
+
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: SalusCloudCoordinator, device_id: str, device: SalusDevice) -> None:
+        """Initialize the problem sensor."""
+        super().__init__(coordinator, device_id, device)
+        self._attr_name = f"{self._attr_name} {PROBLEM_METRIC.name}"
+        self._attr_unique_id = f"{self._attr_unique_id}_{PROBLEM_METRIC.slug}"
+
+    @property
+    def is_on(self) -> bool | None:
+        """True when any error code is the integer 1. None when no error keys remain."""
+        reading = diagnostics(self.shadow_properties)
+        return None if reading is None else reading.errors.is_on()
+
+    @property
+    def extra_state_attributes(self) -> dict[str, list[str]]:
+        """Active error codes. Omitted when the thermostat has reported no error keys."""
+        reading = diagnostics(self.shadow_properties)
+        if reading is None or not reading.errors.known:
+            return {}
+        return {"error_codes": list(reading.errors.active)}
 
 
 class SalusCloudBinarySensor(SalusEntity, BinarySensorEntity):

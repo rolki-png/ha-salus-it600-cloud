@@ -6,12 +6,14 @@ from custom_components.salus_it600_cloud.heating import (
     CentiCelsius,
     Demand,
     HeatingAction,
+    IntCell,
     ThermostatCommand,
     ThermostatObservation,
     centi_celsius_from_degrees,
     decode_running_cell,
     decode_x100_cell,
     desired_to_reported_thermostat,
+    diagnostics,
     heating_action,
     hold_raw_for_preset,
     observation_from_cells,
@@ -24,6 +26,13 @@ SETPOINT = "ep9:sIT600TH:HeatingSetpoint_x100"
 HOLD = "ep9:sIT600TH:HoldType"
 SYSTEM = "ep9:sIT600TH:SystemMode"
 BATTERY = "ep9:sBasicS:BatteryVoltage"
+LEVEL = "ep9:sIT600TH:BatteryLevel"
+RSSI = "ep9:sIT600I:LastMessageRSSI_d"
+LQI = "ep9:sIT600I:LastMessageLQI_d"
+LOCK = "ep9:sIT600TH:LockKey"
+ERROR_01 = "ep9:sIT600TH:Error01"
+ERROR_06 = "ep9:sIT600TH:Error06"
+ERROR_32 = "ep9:sIT600TH:Error32"
 _DELETE = object()
 
 
@@ -283,3 +292,108 @@ def test_observation_rejects_a_raw_float_temperature() -> None:
 def test_unknown_preset_slug_is_rejected() -> None:
     with pytest.raises(KeyError):
         hold_raw_for_preset("boost")
+
+
+def test_empty_map_has_no_diagnostics() -> None:
+    assert diagnostics({}) is None
+
+
+def test_battery_level_zero_is_a_raw_reading() -> None:
+    """BatteryLevel 0 and 5 are raw levels. Voltage tenths and a bool are not that level."""
+
+    zero = diagnostics(_properties(**{LEVEL: 0}))
+    five = diagnostics(_properties(**{LEVEL: 5}))
+    voltage_only = diagnostics(_properties())
+    garbage = diagnostics(_properties(**{LEVEL: True}))
+
+    assert zero is not None and zero.battery_level.value == 0
+    assert zero.battery_level.present is True
+    assert five is not None and five.battery_level.value == 5
+    assert voltage_only is not None and voltage_only.battery_level.present is False
+    assert voltage_only.battery_level.value is None
+    assert observe(_properties()).battery is not None
+    assert observe(_properties()).battery.volts() == 3.0
+    assert garbage is not None and garbage.battery_level.present is True
+    assert garbage.battery_level.value is None
+
+
+def test_radio_cells_are_the_thermostat_endpoint() -> None:
+    """ep9 signal cells are the readings. The same name on another endpoint is not."""
+
+    other = "ep7:sIT600I:LastMessageRSSI_d"
+    reading = diagnostics(_properties(**{RSSI: -62, LQI: 180, other: -10}))
+    only_other = diagnostics(_properties(**{other: -10, "ep8:sIT600I:LastMessageLQI_d": 20}))
+
+    assert reading is not None
+    assert reading.rssi_dbm.value == -62
+    assert reading.lqi.value == 180
+    assert only_other is not None
+    assert only_other.rssi_dbm.present is False
+    assert only_other.lqi.present is False
+
+
+def test_error_codes_are_the_integer_ones() -> None:
+    """Any Error01..Error32 integer 1 is active. A bool, a zero, and other clusters are not."""
+
+    quiet = diagnostics(_properties(**{ERROR_01: 0, ERROR_06: 0}))
+    active = diagnostics(
+        _properties(
+            **{
+                ERROR_32: 1,
+                ERROR_01: 0,
+                ERROR_06: 1,
+                "ep9:sIT600TH:Error09": True,
+                "ep9:sIT600TH:Error33": 1,
+                "ep9:sIT600TH:Error00": 1,
+                "ep8:sIT600WC:Error10": 1,
+            }
+        )
+    )
+    missing = diagnostics(_properties())
+    boolean = diagnostics(_properties(**{ERROR_01: True}))
+
+    assert quiet is not None and quiet.errors.known is True
+    assert quiet.errors.is_on() is False
+    assert quiet.errors.active == ()
+    assert active is not None and active.errors.is_on() is True
+    assert active.errors.active == ("Error06", "Error32")
+    assert missing is not None and missing.errors.known is False
+    assert missing.errors.is_on() is None
+    assert missing.errors.active == ()
+    assert boolean is not None and boolean.errors.known is True
+    assert boolean.errors.is_on() is False
+    assert boolean.errors.active == ()
+
+
+def test_lock_key_is_locked_only_for_integer_one() -> None:
+    locked = diagnostics(_properties(**{LOCK: 1}))
+    unlocked = diagnostics(_properties(**{LOCK: 0}))
+    absent = diagnostics(_properties())
+    boolean = diagnostics(_properties(**{LOCK: True}))
+    other = diagnostics(_properties(**{LOCK: 5}))
+
+    assert locked is not None and locked.lock.is_locked() is True
+    assert unlocked is not None and unlocked.lock.cell.present is True
+    assert unlocked.lock.is_locked() is False
+    assert absent is not None and absent.lock.cell.present is False
+    assert absent.lock.is_locked() is None
+    assert boolean is not None and boolean.lock.cell.present is True
+    assert boolean.lock.is_locked() is None
+    assert other is not None and other.lock.is_locked() is None
+
+
+def test_lock_command_name_is_the_name_diagnostics_reads() -> None:
+    """Pending overlay and the parser share one write-name to read-name pair."""
+
+    reported_name = desired_to_reported_thermostat()[ThermostatCommand.LOCK]
+    reading = diagnostics({reported_name: 1})
+
+    assert ThermostatCommand.LOCK == "ep9:sIT600TH:SetLockKey"
+    assert reported_name == LOCK
+    assert reading is not None and reading.lock.is_locked() is True
+    assert ThermostatCommand.LOCK not in desired_to_reported_thermostat().values()
+
+
+def test_bool_cannot_pose_as_a_raw_level() -> None:
+    with pytest.raises(ValueError):
+        IntCell(present=True, value=True)
