@@ -15,6 +15,7 @@ Cool stays disabled. `SystemMode` is in the shadow. The integer that means cool 
 The thermostat gets these sensors when the matching shadow cell is present.
 
 - Temperature, from the room reading.
+- Humidity, when `SunnySetpoint_x100` is present. The Salus temperature curve labels that cell Humidity. The cloud integer is already a percent: 60 is 60%. It is not scaled like `LocalTemperature_x100`.
 - Heating setpoint.
 - Cooling setpoint, only when `CoolingControl` is the integer 1 or `CoolingSetpoint_x100` is present. The sensor does not turn on cool mode.
 - Battery level, the raw `BatteryLevel` integer. There is no percent unit, so a reported 0 stays 0.
@@ -32,7 +33,7 @@ Keypad lock exists when `LockKey` is present. Lock and unlock write `SetLockKey`
 
 ## Humidity
 
-The account shadow has no humidity property. The integration does not create a humidity sensor.
+`SunnySetpoint_x100` is the humidity cell. The Salus app shows it on the temperature curve. A thermostat that reports the key gets a humidity sensor, and the climate entity reports the same percent. A thermostat without the key gets neither. Home Assistant history records the sensor, so the percent is available beside temperature.
 
 ## Wiring centre
 

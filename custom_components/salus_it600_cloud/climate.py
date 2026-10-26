@@ -98,6 +98,13 @@ class SalusCloudClimate(SalusEntity, ClimateEntity):
         return None if sample is None else sample.celsius()
 
     @property
+    def current_humidity(self) -> float | None:
+        """Return the measured relative humidity, in percent."""
+        observation = observe(self.shadow_properties)
+        sample = None if observation is None else observation.humidity.sample
+        return None if sample is None else sample.percent()
+
+    @property
     def target_temperature(self) -> float | None:
         """Return the target temperature."""
         observation = observe(self.shadow_properties)

@@ -11,6 +11,7 @@ SENSOR_NAMES = {
     "battery_level": "Battery level",
     "cooling_setpoint": "Cooling setpoint",
     "heating_setpoint": "Heating setpoint",
+    "humidity": "Humidity",
     "link_quality": "Link quality",
     "signal_strength": "Signal strength",
     "temperature": "Temperature",

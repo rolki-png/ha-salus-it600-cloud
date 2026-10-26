@@ -313,6 +313,23 @@ async def test_unreadable_heat_limit_keeps_the_default() -> None:
     assert entity.max_temp == 35.0
 
 
+async def test_current_humidity_is_the_reported_percent() -> None:
+    """The climate entity shows the same whole percent the humidity sensor records."""
+
+    entity = await _climate_with(**{"ep9:sIT600TH:SunnySetpoint_x100": 67})
+
+    assert entity.current_humidity == 67.0
+    assert entity.hvac_mode is HVACMode.HEAT
+
+
+async def test_missing_or_unreadable_humidity_stays_unset() -> None:
+    missing = await _climate_with()
+    garbage = await _climate_with(**{"ep9:sIT600TH:SunnySetpoint_x100": True})
+
+    assert missing.current_humidity is None
+    assert garbage.current_humidity is None
+
+
 async def test_cooling_cells_do_not_add_a_cool_mode() -> None:
     """A reported cooling setpoint does not change heat, off, or the three presets."""
 

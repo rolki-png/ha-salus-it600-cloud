@@ -15,5 +15,5 @@
     "pycognito==2024.5.1",
     "paho-mqtt>=2.0.0"
   ],
-  "version": "1.3.0"
+  "version": "1.4.0"
 }

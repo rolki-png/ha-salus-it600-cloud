@@ -10,7 +10,12 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EntityCategory, SIGNAL_STRENGTH_DECIBELS_MILLIWATT, UnitOfTemperature
+from homeassistant.const import (
+    PERCENTAGE,
+    SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
+    EntityCategory,
+    UnitOfTemperature,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -20,9 +25,11 @@ from .entity import SalusEntity, async_add_salus_entities
 from .heating import (
     COOLING_SETPOINT_METRIC,
     DIAGNOSTIC_METRICS,
+    HUMIDITY_METRIC,
     TEMPERATURE_METRICS,
     DiagnosticKind,
     DiagnosticMetric,
+    HumidityMetric,
     TemperatureMetric,
     diagnostics,
     observe,
@@ -52,6 +59,7 @@ async def async_setup_entry(
 
     async_add_salus_entities(entry, coordinator, async_add_entities, records, entities)
     _add_shown_temperature(entry, coordinator, async_add_entities, COOLING_SETPOINT_METRIC)
+    _add_humidity(entry, coordinator, async_add_entities, HUMIDITY_METRIC)
     for metric in DIAGNOSTIC_METRICS:
         _add_diagnostic(entry, coordinator, async_add_entities, metric)
 
@@ -106,6 +114,31 @@ def _add_shown_temperature(
     async_add_salus_entities(entry, coordinator, async_add_entities, records, entities)
 
 
+def _add_humidity(
+    entry: ConfigEntry,
+    coordinator: SalusCloudCoordinator,
+    async_add_entities: AddEntitiesCallback,
+    metric: HumidityMetric,
+) -> None:
+    """Discover humidity on its own seen set, so the cell can show up after the thermostat."""
+
+    def records() -> dict[str, SalusDevice]:
+        data = coordinator.data or {}
+        selected: dict[str, SalusDevice] = {}
+        for device_id, device in data.items():
+            if not is_climate_device(device):
+                continue
+            observation = observe(device.get("_shadow_properties") or {})
+            if observation is not None and metric.shown(observation):
+                selected[device_id] = device
+        return selected
+
+    def entities(device_id: str, device: SalusDevice) -> list[SalusHumidity]:
+        return [SalusHumidity(coordinator, device_id, device, metric)]
+
+    async_add_salus_entities(entry, coordinator, async_add_entities, records, entities)
+
+
 def _has_temperature(device: dict[str, Any]) -> bool:
     """Check if device is a standalone temperature sensor."""
     device_type = device.get("type", "").lower()
@@ -152,6 +185,36 @@ class SalusHeatingTemperature(SalusEntity, SensorEntity):
         observation = observe(self.shadow_properties)
         sample = None if observation is None else self._metric.read(observation)
         return None if sample is None else sample.celsius()
+
+
+class SalusHumidity(SalusEntity, SensorEntity):
+    """Relative humidity from the thermostat shadow."""
+
+    _attr_device_class = SensorDeviceClass.HUMIDITY
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_suggested_display_precision = 0
+
+    def __init__(
+        self,
+        coordinator: SalusCloudCoordinator,
+        device_id: str,
+        device: SalusDevice,
+        metric: HumidityMetric,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, device_id, device)
+        self._metric = metric
+        self._attr_name = f"{self._attr_name} {metric.name}"
+        self._attr_unique_id = f"{self._attr_unique_id}_{metric.slug}"
+        self._attr_translation_key = metric.translation_key
+
+    @property
+    def native_value(self) -> float | None:
+        """Return relative humidity in percent."""
+        observation = observe(self.shadow_properties)
+        sample = None if observation is None else self._metric.read(observation)
+        return None if sample is None else sample.percent()
 
 
 class SalusDiagnosticSensor(SalusEntity, SensorEntity):

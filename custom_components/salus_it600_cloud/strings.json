@@ -96,6 +96,9 @@
       "heating_setpoint": {
         "name": "Heating setpoint"
       },
+      "humidity": {
+        "name": "Humidity"
+      },
       "link_quality": {
         "name": "Link quality"
       },

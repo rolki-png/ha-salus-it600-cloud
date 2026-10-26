@@ -3,11 +3,15 @@
 from unittest.mock import MagicMock, patch
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
-from homeassistant.const import SIGNAL_STRENGTH_DECIBELS_MILLIWATT, EntityCategory, UnitOfTemperature
+from homeassistant.const import PERCENTAGE, SIGNAL_STRENGTH_DECIBELS_MILLIWATT, EntityCategory, UnitOfTemperature
 
 from custom_components.salus_it600_cloud import sensor
 from custom_components.salus_it600_cloud.heating import TEMPERATURE_METRICS
-from custom_components.salus_it600_cloud.sensor import SalusDiagnosticSensor, SalusHeatingTemperature
+from custom_components.salus_it600_cloud.sensor import (
+    SalusDiagnosticSensor,
+    SalusHeatingTemperature,
+    SalusHumidity,
+)
 
 from . import fixtures
 from .helpers import CALL_LATER, FakeApi, create_coordinator
@@ -311,6 +315,68 @@ async def test_battery_level_that_appears_later_is_added_once() -> None:
 
 COOLING = "ep9:sIT600TH:CoolingSetpoint_x100"
 COOLING_CONTROL = "ep9:sIT600TH:CoolingControl"
+HUMIDITY = "ep9:sIT600TH:SunnySetpoint_x100"
+
+
+async def test_humidity_is_whole_percent_when_the_key_is_present() -> None:
+    """60 stays 60%. The other thermostat does not get a sensor, and this one is not a diagnostic."""
+
+    coordinator, _, _ = await _coordinator_with(**{HUMIDITY: 60})
+    entities = await _sensor_entities(coordinator)
+    entity = entities[_uid(fixtures.THERMOSTAT_ID, "humidity")]
+
+    assert isinstance(entity, SalusHumidity)
+    assert entity.native_value == 60.0
+    assert entity.state_class is SensorStateClass.MEASUREMENT
+    assert entity.device_class is SensorDeviceClass.HUMIDITY
+    assert entity.native_unit_of_measurement == PERCENTAGE
+    assert entity.suggested_display_precision == 0
+    assert entity.entity_category is None
+    assert entity.translation_key == "humidity"
+    assert entity.name == "Apartmán A Termostat pokoj Humidity"
+    assert entity.has_entity_name is False
+    assert _uid(fixtures.THERMOSTAT_2_ID, "humidity") not in entities
+
+
+async def test_zero_humidity_is_zero_percent() -> None:
+    coordinator, _, _ = await _coordinator_with(**{HUMIDITY: 0})
+    entity = (await _sensor_entities(coordinator))[_uid(fixtures.THERMOSTAT_ID, "humidity")]
+
+    assert entity.native_value == 0.0
+
+
+async def test_missing_humidity_key_adds_no_sensor() -> None:
+    coordinator, _, _ = await create_coordinator()
+
+    assert _uid(fixtures.THERMOSTAT_ID, "humidity") not in await _sensor_entities(coordinator)
+
+
+async def test_bool_humidity_is_unknown() -> None:
+    coordinator, _, _ = await _coordinator_with(**{HUMIDITY: True})
+    entity = (await _sensor_entities(coordinator))[_uid(fixtures.THERMOSTAT_ID, "humidity")]
+
+    assert entity.native_value is None
+
+
+async def test_humidity_that_appears_later_is_added_once() -> None:
+    """A humidity cell that shows up after setup still gets one sensor. A repeat does not add another."""
+
+    coordinator, _, _ = await create_coordinator()
+    entry, add_entities = _setup_sensors(coordinator)
+    await sensor.async_setup_entry(MagicMock(), entry, add_entities)
+    assert _uid(fixtures.THERMOSTAT_ID, "humidity") not in _added(add_entities)
+
+    properties = dict(coordinator.data[fixtures.THERMOSTAT_ID]["_shadow_properties"])
+    properties[HUMIDITY] = 67
+    coordinator.data[fixtures.THERMOSTAT_ID]["_shadow_properties"] = properties
+    coordinator.async_set_updated_data(dict(coordinator.data))
+    entity = _added(add_entities)[_uid(fixtures.THERMOSTAT_ID, "humidity")]
+    assert entity.native_value == 67.0
+
+    calls = add_entities.call_count
+    coordinator.async_set_updated_data({})
+    coordinator.async_set_updated_data(dict(coordinator.data))
+    assert add_entities.call_count == calls
 
 
 async def test_cooling_setpoint_is_a_measurement_when_the_key_is_present() -> None:

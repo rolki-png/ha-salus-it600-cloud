@@ -96,6 +96,9 @@
       "heating_setpoint": {
         "name": "Nastavená teplota topení"
       },
+      "humidity": {
+        "name": "Vlhkost"
+      },
       "link_quality": {
         "name": "Kvalita spojení"
       },

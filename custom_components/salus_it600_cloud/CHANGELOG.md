@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-10-26
+
+### Added
+
+- A humidity sensor when the thermostat reports `SunnySetpoint_x100`. The Salus temperature curve labels that cell Humidity. The cloud integer is already a percent, so 60 is 60%. The climate entity shows the same reading, and Home Assistant history records the sensor.
+
 ## [1.3.0] - 2026-10-26
 
 ### Added
@@ -225,7 +231,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Planned features
 
-These items are not in 1.3.0.
+These items are not in 1.4.0.
 
 - Schedule viewing and editing
 - US region accounts

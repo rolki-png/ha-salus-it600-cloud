@@ -74,6 +74,21 @@ def centi_celsius_from_degrees(degrees: float) -> int:
 
 
 @dataclass(frozen=True)
+class Percent:
+    """A whole-number percent. 60 is 60%, not 0.60%."""
+
+    points: int
+
+    def __post_init__(self) -> None:
+        if type(self.points) is not int:
+            raise TypeError("percent points must be an int")
+
+    def percent(self) -> float:
+        """Return the percent. The only reading of this value."""
+        return float(self.points)
+
+
+@dataclass(frozen=True)
 class DeciVolt:
     """Tenths of a volt, as BatteryVoltage is reported."""
 
@@ -222,6 +237,25 @@ class CoolingReport:
 
 
 @dataclass(frozen=True)
+class HumidityReport:
+    """Reported relative humidity.
+
+    exposed is true when the humidity cell exists. sample is None when that
+    cell is absent or not an int. The integer 0 is 0%. A bool is not a reading.
+    The cloud integer is already a percent. It is not divided by 100.
+    """
+
+    exposed: bool
+    sample: Percent | None
+
+    def __post_init__(self) -> None:
+        if self.sample is not None and type(self.sample) is not Percent:
+            raise TypeError("humidity sample must be Percent")
+        if self.sample is not None and not self.exposed:
+            raise ValueError("a humidity sample requires exposure")
+
+
+@dataclass(frozen=True)
 class ThermostatObservation:
     """One parsed thermostat shadow. observe and history cells are the only builders."""
 
@@ -231,6 +265,7 @@ class ThermostatObservation:
     min_heat_setpoint: CentiCelsius | None
     max_heat_setpoint: CentiCelsius | None
     cooling: CoolingReport
+    humidity: HumidityReport
     hold: Hold
     system_mode: SystemMode
     battery: DeciVolt | None
@@ -248,6 +283,8 @@ class ThermostatObservation:
                 raise TypeError("temperatures must be CentiCelsius")
         if type(self.cooling) is not CoolingReport:
             raise TypeError("cooling must be CoolingReport")
+        if type(self.humidity) is not HumidityReport:
+            raise TypeError("humidity must be HumidityReport")
         if type(self.hold) is not Hold or type(self.system_mode) is not SystemMode:
             raise TypeError("hold and system_mode must be their domain types")
         if self.battery is not None and type(self.battery) is not DeciVolt:
@@ -321,6 +358,29 @@ def _cooling_shown(observation: ThermostatObservation) -> bool:
     return observation.cooling.exposed
 
 
+@dataclass(frozen=True)
+class HumidityMetric:
+    """One humidity sensor. read returns the observation field, not a wire key.
+
+    slug is part of the unique id. translation_key is the strings.json entity key.
+    shown selects which observations get the sensor.
+    """
+
+    slug: str
+    name: str
+    translation_key: str
+    read: Callable[[ThermostatObservation], Percent | None]
+    shown: Callable[[ThermostatObservation], bool]
+
+
+def _read_humidity(observation: ThermostatObservation) -> Percent | None:
+    return observation.humidity.sample
+
+
+def _humidity_shown(observation: ThermostatObservation) -> bool:
+    return observation.humidity.exposed
+
+
 TEMPERATURE_METRICS: tuple[TemperatureMetric, ...] = (
     TemperatureMetric("local_temperature", "Temperature", "temperature", _read_local),
     TemperatureMetric("heating_setpoint", "Heating setpoint", "heating_setpoint", _read_setpoint),
@@ -332,6 +392,7 @@ COOLING_SETPOINT_METRIC = TemperatureMetric(
     _read_cooling,
     _cooling_shown,
 )
+HUMIDITY_METRIC = HumidityMetric("humidity", "Humidity", "humidity", _read_humidity, _humidity_shown)
 RUNNING_STATE_METRIC = MetricLabel("running_state", "Running state", "running_state")
 PROBLEM_METRIC = MetricLabel("problem", "Problem", "problem")
 LOCK_METRIC = MetricLabel("lock", "Keypad lock", "keypad_lock")
@@ -402,6 +463,8 @@ _MIN_HEAT_KEY = "ep9:sIT600TH:MinHeatSetpoint_x100"
 _MAX_HEAT_KEY = "ep9:sIT600TH:MaxHeatSetpoint_x100"
 _COOLING_SETPOINT_KEY = "ep9:sIT600TH:CoolingSetpoint_x100"
 _COOLING_CONTROL_KEY = "ep9:sIT600TH:CoolingControl"
+# The Salus temperature curve labels this cell Humidity. The cloud integer is already a percent.
+_HUMIDITY_KEY = "ep9:sIT600TH:SunnySetpoint_x100"
 _LOCK_WIRE = ("ep9:sIT600TH:SetLockKey", "ep9:sIT600TH:LockKey")
 _BATTERY_LEVEL_KEY = "ep9:sIT600TH:BatteryLevel"
 _RSSI_KEY = "ep9:sIT600I:LastMessageRSSI_d"
@@ -454,6 +517,17 @@ def decode_x100_cell(value: Any, *, present: bool) -> CentiCelsius | None:
     return CentiCelsius(value)
 
 
+def decode_percent_cell(value: Any, *, present: bool) -> Percent | None:
+    """Whole percent, or None when the cell is missing or not an int.
+
+    The integer 0 is 0%. bool and float are not humidity. A cloud reading of
+    60 stays 60%. This cell is not scaled like a temperature.
+    """
+    if not present or type(value) is not int:
+        return None
+    return Percent(value)
+
+
 def observation_from_cells(
     *,
     running: Any,
@@ -476,10 +550,13 @@ def observation_from_cells(
     cooling_present: bool = False,
     cooling_control: Any = None,
     cooling_control_present: bool = False,
+    humidity: Any = None,
+    humidity_present: bool = False,
 ) -> ThermostatObservation:
     """Build an observation from raw cells. Callers do not pass property names.
 
-    Heat limits and cooling default to absent. History rows do not carry them.
+    Heat limits, cooling, and humidity default to absent. History rows do not
+    carry them unless the caller passes the humidity cell.
     """
     tenths = _optional_int(battery_present, battery_tenths)
     return ThermostatObservation(
@@ -490,6 +567,10 @@ def observation_from_cells(
         max_heat_setpoint=decode_x100_cell(max_heat_x100, present=max_heat_present),
         cooling=_cooling_from_cells(
             cooling_x100, cooling_present, cooling_control, cooling_control_present
+        ),
+        humidity=HumidityReport(
+            exposed=humidity_present,
+            sample=decode_percent_cell(humidity, present=humidity_present),
         ),
         hold=_hold(hold_present, hold),
         system_mode=SystemMode(_optional_int(system_mode_present, system_mode)),
@@ -512,6 +593,7 @@ def observe(properties: Mapping[str, Any]) -> ThermostatObservation | None:
     max_heat_present, max_heat = _cell(properties, _MAX_HEAT_KEY)
     cooling_present, cooling = _cell(properties, _COOLING_SETPOINT_KEY)
     control_present, control = _cell(properties, _COOLING_CONTROL_KEY)
+    humidity_present, humidity = _cell(properties, _HUMIDITY_KEY)
     hold_present, hold = _cell(properties, _HOLD_WIRE[1])
     system_present, system_mode = _cell(properties, _SYSTEM_WIRE[1])
     battery_present, battery = _cell(properties, _READ_ONLY["battery"])
@@ -536,6 +618,8 @@ def observe(properties: Mapping[str, Any]) -> ThermostatObservation | None:
         cooling_present=cooling_present,
         cooling_control=control,
         cooling_control_present=control_present,
+        humidity=humidity,
+        humidity_present=humidity_present,
     )
 
 

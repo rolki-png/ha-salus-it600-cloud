@@ -37,6 +37,7 @@ MIN_HEAT = "ep9:sIT600TH:MinHeatSetpoint_x100"
 MAX_HEAT = "ep9:sIT600TH:MaxHeatSetpoint_x100"
 COOLING = "ep9:sIT600TH:CoolingSetpoint_x100"
 COOLING_CONTROL = "ep9:sIT600TH:CoolingControl"
+HUMIDITY = "ep9:sIT600TH:SunnySetpoint_x100"
 _DELETE = object()
 
 
@@ -77,6 +78,8 @@ def test_non_empty_map_with_no_thermostat_keys_is_unreported() -> None:
     assert observation.max_heat_setpoint is None
     assert observation.cooling.exposed is False
     assert observation.cooling.sample is None
+    assert observation.humidity.exposed is False
+    assert observation.humidity.sample is None
     assert observation.preset_slug() is None
     assert heating_action(observation) is HeatingAction.UNKNOWN
 
@@ -192,6 +195,34 @@ def test_alternate_suffix_keys_are_not_heat_limits_or_cooling() -> None:
     assert observation.max_heat_setpoint is None
     assert observation.cooling.exposed is False
     assert observation.cooling.sample is None
+
+
+def test_sunny_setpoint_is_whole_percent_humidity() -> None:
+    """60 is 60%. Temperature hundredths stay on their own scale. A bool is not a reading."""
+
+    humid = observe(_properties(**{LOCAL: 1620, HUMIDITY: 60}))
+    zero = observe(_properties(**{HUMIDITY: 0}))
+    absent = observe(_properties())
+    garbage = observe(_properties(**{HUMIDITY: True}))
+    other = observe(
+        _properties(
+            **{
+                "ep7:sIT600TH:SunnySetpoint_x100": 60,
+                "ep9:sIT600TH:SunnySetpoint_x100_a": 67,
+            }
+        )
+    )
+
+    assert humid.local_temperature.celsius() == 16.2
+    assert humid.humidity.exposed is True
+    assert humid.humidity.sample.percent() == 60.0
+    assert zero.humidity.sample.percent() == 0.0
+    assert absent.humidity.exposed is False
+    assert absent.humidity.sample is None
+    assert garbage.humidity.exposed is True
+    assert garbage.humidity.sample is None
+    assert other.humidity.exposed is False
+    assert other.humidity.sample is None
 
 
 def test_heat_limits_scale_from_hundredths() -> None:
@@ -355,6 +386,8 @@ def test_history_cells_do_not_need_wire_keys() -> None:
     assert observation.max_heat_setpoint is None
     assert observation.cooling.exposed is False
     assert observation.cooling.sample is None
+    assert observation.humidity.exposed is False
+    assert observation.humidity.sample is None
     assert observation.preset_slug() == "manual"
     assert observation.battery.volts() == 3.0
 
@@ -373,6 +406,7 @@ def test_observation_rejects_a_raw_float_temperature() -> None:
             min_heat_setpoint=None,
             max_heat_setpoint=None,
             cooling=observe(_properties()).cooling,
+            humidity=observe(_properties()).humidity,
             hold=observe(_properties()).hold,
             system_mode=observe(_properties()).system_mode,
             battery=None,
