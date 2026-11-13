@@ -15,7 +15,8 @@ jobs:
           - python: "3.14"
             homeassistant: homeassistant
           - python: "3.13"
-            homeassistant: homeassistant==2025.8.*
+            # Home Assistant 2025.8 pins an aiodns that breaks with pycares 5.
+            homeassistant: homeassistant==2025.8.* "pycares<5"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -24,7 +25,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements_test.txt "${{ matrix.homeassistant }}"
+          pip install -r requirements_test.txt ${{ matrix.homeassistant }}
       - name: Show the Home Assistant version under test
         run: pip show homeassistant | head -2
       - name: Run tests
