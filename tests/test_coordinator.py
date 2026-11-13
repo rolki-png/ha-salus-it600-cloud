@@ -24,7 +24,7 @@ from custom_components.salus_it600_cloud.const import (
 from custom_components.salus_it600_cloud.coordinator import ISSUE_CLOUD_UNAVAILABLE
 
 from . import fixtures
-from .helpers import CALL_LATER, FakeApi, FakeConnection, create_coordinator
+from .helpers import CALL_LATER, FakeApi, FakeConnection, FakeConnections, create_coordinator
 
 HOLD = "ep9:sIT600TH:HoldType"
 TEMPERATURE = "ep9:sIT600TH:LocalTemperature_x100"
@@ -438,3 +438,53 @@ async def test_shutdown_stops_connection() -> None:
     await coordinator.async_shutdown()
 
     assert connection.stopped is True
+
+
+async def test_each_gateway_gets_its_own_connection_and_commands_use_it() -> None:
+    """Every gateway has a connection with its own client id and devices, and commands go through it."""
+
+    connections = FakeConnections()
+    coordinator, _, _ = await create_coordinator(FakeApi(second_gateway=True), connection_factory=connections.factory)
+
+    first, second = connections.created
+    assert [c.kwargs["client_id_prefix"] for c in connections.created] == [
+        fixtures.GATEWAY_CODE,
+        fixtures.GATEWAY_2_CODE,
+    ]
+    assert first.started_with == [
+        fixtures.THERMOSTAT_CODE,
+        fixtures.THERMOSTAT_2_CODE,
+        fixtures.RELAY_CODE,
+        fixtures.GATEWAY_CODE,
+    ]
+    assert second.started_with == [fixtures.THERMOSTAT_3_CODE]
+
+    await coordinator.async_set_temperature(fixtures.THERMOSTAT_3_ID, 21.0)
+
+    assert [code for code, _, _ in second.published] == [fixtures.THERMOSTAT_3_CODE]
+    assert first.published == []
+
+    await coordinator.async_set_temperature(fixtures.THERMOSTAT_ID, 21.0)
+
+    assert [code for code, _, _ in first.published] == [fixtures.THERMOSTAT_CODE]
+
+    await coordinator.async_shutdown()
+
+    assert first.stopped and second.stopped
+
+
+async def test_push_interval_applies_only_when_every_gateway_has_push() -> None:
+    """Polling stays at the slow interval until all gateway connections report push available."""
+
+    connections = FakeConnections()
+    coordinator, _, _ = await create_coordinator(FakeApi(second_gateway=True), connection_factory=connections.factory)
+    first, second = connections.created
+
+    first.kwargs["on_push_available"](True)
+    assert coordinator.push_available is False
+
+    second.kwargs["on_push_available"](True)
+    assert coordinator.push_available is True
+
+    first.kwargs["on_push_available"](False)
+    assert coordinator.push_available is False
