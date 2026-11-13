@@ -30,3 +30,15 @@ jobs:
         run: pip show homeassistant | head -2
       - name: Run tests
         run: pytest
+
+  ruff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install Ruff
+        run: python -m pip install ruff==0.17.2
+      - name: Ruff
+        run: ruff check custom_components tests
