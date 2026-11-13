@@ -17,13 +17,20 @@ from . import fixtures
 CALL_LATER = "custom_components.salus_it600_cloud.coordinator.async_call_later"
 
 
-def metadata() -> SalusMetadata:
-    """Return metadata of the fixture gateway."""
+def metadata(*, second_gateway: bool = False) -> SalusMetadata:
+    """Return metadata of the fixture gateway, optionally with a second gateway and its thermostat."""
 
     items = fixtures.slider_details()["data"]["items"]
+    gateways = [GatewayInfo(id=fixtures.GATEWAY_ID, name=fixtures.GATEWAY_NAME, device_code=fixtures.GATEWAY_CODE)]
+    devices = [{**item, "_gateway_id": fixtures.GATEWAY_ID} for item in items if "rule_trigger_key" not in item]
+    if second_gateway:
+        gateways.append(
+            GatewayInfo(id=fixtures.GATEWAY_2_ID, name=fixtures.GATEWAY_2_NAME, device_code=fixtures.GATEWAY_2_CODE)
+        )
+        devices.append({**fixtures.second_gateway_thermostat(), "_gateway_id": fixtures.GATEWAY_2_ID})
     return SalusMetadata(
-        gateways=[GatewayInfo(id=fixtures.GATEWAY_ID, name=fixtures.GATEWAY_NAME, device_code=fixtures.GATEWAY_CODE)],
-        devices=[{**item, "_gateway_id": fixtures.GATEWAY_ID} for item in items if "rule_trigger_key" not in item],
+        gateways=gateways,
+        devices=devices,
         rules=[{**item, "_gateway_id": fixtures.GATEWAY_ID} for item in items if "rule_trigger_key" in item],
     )
 
@@ -31,20 +38,22 @@ def metadata() -> SalusMetadata:
 class FakeApi:
     """Salus Cloud API returning fixture data."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, second_gateway: bool = False) -> None:
+        self.second_gateway = second_gateway
         self.metadata_calls = 0
         self.metadata_error: Exception | None = None
         self.shadows: dict[str, dict[str, Any]] | Exception = {
             fixtures.THERMOSTAT_CODE: fixtures.thermostat_shadow(hold_type=0),
             fixtures.THERMOSTAT_2_CODE: fixtures.thermostat_shadow(hold_type=0, temperature_x100=2300),
             fixtures.RELAY_CODE: fixtures.relay_shadow(0),
+            **({fixtures.THERMOSTAT_3_CODE: fixtures.thermostat_shadow(hold_type=0)} if second_gateway else {}),
         }
 
     async def fetch_metadata(self) -> SalusMetadata:
         self.metadata_calls += 1
         if self.metadata_error:
             raise self.metadata_error
-        return metadata()
+        return metadata(second_gateway=self.second_gateway)
 
     async def get_device_shadows(self, device_codes: list[str]) -> dict[str, dict[str, Any]]:
         if isinstance(self.shadows, Exception):
@@ -87,11 +96,25 @@ class FakeConnection:
         self.published.append((device_code, device_index, properties))
 
 
+class FakeConnections:
+    """Factory handing out one fake MQTT connection per call, in creation order."""
+
+    def __init__(self) -> None:
+        self.created: list[FakeConnection] = []
+
+    def factory(self, **kwargs: Any) -> FakeConnection:
+        connection = FakeConnection()
+        connection.kwargs = kwargs
+        self.created.append(connection)
+        return connection
+
+
 async def create_coordinator(
     api: FakeApi | None = None,
     *,
     sync: bool = False,
     connection: FakeConnection | None = None,
+    connection_factory: Any = None,
     options: dict[str, Any] | None = None,
 ) -> tuple[SalusCloudCoordinator, FakeConnection, list[float]]:
     """Return coordinator after its first refresh with started (fake) MQTT connection and its clock."""
@@ -104,7 +127,11 @@ async def create_coordinator(
     clock = [0.0]
     connection = connection or FakeConnection()
     coordinator = SalusCloudCoordinator(
-        hass, entry, api or FakeApi(), connection_factory=connection.factory, clock=lambda: clock[0]
+        hass,
+        entry,
+        api or FakeApi(),
+        connection_factory=connection_factory or connection.factory,
+        clock=lambda: clock[0],
     )
     coordinator.data = await coordinator._async_update_data()
     await coordinator.async_start_connection()

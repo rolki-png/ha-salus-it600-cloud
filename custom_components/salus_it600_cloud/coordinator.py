@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from functools import partial
 from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta
 from typing import Any
@@ -87,7 +88,9 @@ class SalusCloudCoordinator(DataUpdateCoordinator[dict[str, SalusDevice]]):
         self._store = DeviceStateStore(pending_timeout=PENDING_TIMEOUT_SECONDS, max_age=STALE_AFTER_SECONDS)
         self._metadata: SalusMetadata | None = None
         self._metadata_fetched_at = 0.0
-        self._connection: SalusMqttConnection | None = None
+        # Gateway id -> its AWS IoT connection and whether that connection delivers pushed states
+        self._connections: dict[str, SalusMqttConnection] = {}
+        self._push_states: dict[str, bool] = {}
         self._cancel_confirmation: CALLBACK_TYPE | None = None
         self.push_available = False
         # Gateway id -> device registry id of the gateway device
@@ -103,11 +106,11 @@ class SalusCloudCoordinator(DataUpdateCoordinator[dict[str, SalusDevice]]):
     @property
     def push_denied(self) -> bool | None:
         """Return whether AWS IoT refused pushed state changes, or None when no connection exists."""
-        connection = self._connection
-        if connection is None:
+        if not self._connections:
             return None
-        denied = getattr(connection, "push_denied", None)
-        return denied if isinstance(denied, bool) else None
+        denied = [getattr(connection, "push_denied", None) for connection in self._connections.values()]
+        known = [value for value in denied if isinstance(value, bool)]
+        return any(known) if known else None
 
     @property
     def gateways(self) -> list[GatewayInfo]:
@@ -139,9 +142,13 @@ class SalusCloudCoordinator(DataUpdateCoordinator[dict[str, SalusDevice]]):
             info["via_device_id"] = via_device_id
         return info
 
-    def _device_codes(self) -> list[str]:
+    def _device_codes(self, gateway_id: str | None = None) -> list[str]:
         devices = self._metadata.devices if self._metadata else []
-        return [device["device_code"] for device in devices if device.get("device_code")]
+        return [
+            device["device_code"]
+            for device in devices
+            if device.get("device_code") and (gateway_id is None or device.get("_gateway_id") == gateway_id)
+        ]
 
     async def _async_update_data(self) -> dict[str, SalusDevice]:
         now = self._clock()
@@ -176,8 +183,8 @@ class SalusCloudCoordinator(DataUpdateCoordinator[dict[str, SalusDevice]]):
             return
         self._metadata = metadata
         self._metadata_fetched_at = now
-        if self._connection is not None:
-            self._connection.set_device_codes(self._device_codes())
+        for gateway_id, connection in self._connections.items():
+            connection.set_device_codes(self._device_codes(gateway_id))
 
     def _build_data(self, now: float) -> dict[str, SalusDevice]:
         data: dict[str, SalusDevice] = {}
@@ -198,13 +205,16 @@ class SalusCloudCoordinator(DataUpdateCoordinator[dict[str, SalusDevice]]):
         """Connect to AWS IoT for commands and pushed device state changes."""
         if not self.gateways:
             return
-        self._connection = self._connection_factory(
-            credentials_provider=self.api.get_iot_credentials,
-            client_id_prefix=self.gateways[0].device_code,
-            on_shadow_document=self._handle_shadow_document,
-            on_push_available=self._handle_push_available,
-        )
-        await self._connection.async_start(self._device_codes())
+        for gateway in self.gateways:
+            connection = self._connection_factory(
+                credentials_provider=self.api.get_iot_credentials,
+                client_id_prefix=gateway.device_code,
+                on_shadow_document=self._handle_shadow_document,
+                on_push_available=partial(self._handle_push_available, gateway.id),
+            )
+            self._connections[gateway.id] = connection
+            self._push_states[gateway.id] = False
+            await connection.async_start(self._device_codes(gateway.id))
 
     async def async_shutdown(self) -> None:
         """Stop polling and the AWS IoT connection."""
@@ -212,8 +222,7 @@ class SalusCloudCoordinator(DataUpdateCoordinator[dict[str, SalusDevice]]):
         if self._cancel_confirmation is not None:
             self._cancel_confirmation()
             self._cancel_confirmation = None
-        if self._connection is not None:
-            await self._connection.async_stop()
+        await asyncio.gather(*(connection.async_stop() for connection in self._connections.values()))
 
     @callback
     def _handle_shadow_document(self, device_code: str, document: dict[str, Any]) -> None:
@@ -225,9 +234,10 @@ class SalusCloudCoordinator(DataUpdateCoordinator[dict[str, SalusDevice]]):
         self.async_set_updated_data(self._build_data(now))
 
     @callback
-    def _handle_push_available(self, available: bool) -> None:
-        self.push_available = available
-        self.update_interval = _scan_interval(self.config_entry.options, push=available)
+    def _handle_push_available(self, gateway_id: str, available: bool) -> None:
+        self._push_states[gateway_id] = available
+        self.push_available = all(self._push_states.values())
+        self.update_interval = _scan_interval(self.config_entry.options, push=self.push_available)
 
     def _record_shadow_poll_failure(self) -> None:
         self._consecutive_shadow_failures += 1
@@ -310,7 +320,7 @@ class SalusCloudCoordinator(DataUpdateCoordinator[dict[str, SalusDevice]]):
             raise HomeAssistantError(f"Salus gateway {gateway_id} not found")
         try:
             await self._async_publish(
-                gateway.device_code, GATEWAY_SHADOW_INDEX, {"ep0:sRule:SetTriggerRule": rule_trigger_key}
+                gateway.id, gateway.device_code, GATEWAY_SHADOW_INDEX, {"ep0:sRule:SetTriggerRule": rule_trigger_key}
             )
         except SalusCloudConnectionError as err:
             raise HomeAssistantError(f"Failed to trigger OneTouch rule: {err}") from err
@@ -321,16 +331,21 @@ class SalusCloudCoordinator(DataUpdateCoordinator[dict[str, SalusDevice]]):
             raise HomeAssistantError(f"Salus device {device_id} not found")
         return device
 
-    async def _async_publish(self, device_code: str, device_index: str, properties: dict[str, Any]) -> None:
-        if self._connection is None:
+    async def _async_publish(
+        self, gateway_id: str, device_code: str, device_index: str, properties: dict[str, Any]
+    ) -> None:
+        connection = self._connections.get(gateway_id)
+        if connection is None:
             raise SalusCloudConnectionError("Not connected to AWS IoT")
-        await self._connection.async_publish_shadow(device_code, device_index, properties)
+        await connection.async_publish_shadow(device_code, device_index, properties)
 
     async def _async_send(self, devices: list[SalusDevice], properties: dict[str, Any]) -> None:
         results = await asyncio.gather(
             *(
                 self._async_publish(
-                    device["device_code"], device.get("_shadow_device_index") or DEFAULT_SHADOW_INDEX, properties
+                    device.get("_gateway_id", ""),
+                    device["device_code"],
+                    device.get("_shadow_device_index") or DEFAULT_SHADOW_INDEX, properties
                 )
                 for device in devices
             ),

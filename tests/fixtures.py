@@ -10,6 +10,11 @@ THERMOSTAT_ID = "20000000-0000-4000-8000-000000000001"
 THERMOSTAT_CODE = "SAU2AG1_GW-001E5E000001-SQ610RF-001E5E0000000B02"
 THERMOSTAT_2_ID = "20000000-0000-4000-8000-000000000002"
 THERMOSTAT_2_CODE = "SAU2AG1_GW-001E5E000001-SQ610RF-001E5E0000000A01"
+GATEWAY_2_ID = "10000000-0000-4000-8000-000000000002"
+GATEWAY_2_CODE = "SAU2AG1_GW-001E5E000002"
+GATEWAY_2_NAME = "Apartmán B"
+THERMOSTAT_3_ID = "20000000-0000-4000-8000-000000000003"
+THERMOSTAT_3_CODE = "SAU2AG1_GW-001E5E000002-SQ610RF-001E5E0000000E05"
 RELAY_ID = "30000000-0000-4000-8000-000000000001"
 RELAY_CODE = "SAU2AG1_GW-001E5E000001-SR600-001E5E0000000C03"
 RULE_ID = "40000000-0000-4000-8000-000000000001"
@@ -74,6 +79,12 @@ def _device(device_id: str, code: str, name: str, model: str, category: str) -> 
         "category": {"name": category, "category_id": "13"},
         "alert_communication_configs": [],
     }
+
+
+def second_gateway_thermostat() -> dict[str, Any]:
+    """Return the thermostat of the second gateway."""
+
+    return _device(THERMOSTAT_3_ID, THERMOSTAT_3_CODE, "Termostat ložnice", "SQ610RF", "Quantum Thermostats")
 
 
 def slider_details() -> dict[str, Any]:
