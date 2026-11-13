@@ -1,6 +1,6 @@
 # Salus iT600 Cloud for Home Assistant
 
-Home Assistant custom integration for Salus iT600 devices through the Salus Cloud API (EU Premium).
+Home Assistant custom integration for Salus iT600 devices through the Salus Cloud API (EU/UK).
 
 ## Features
 
