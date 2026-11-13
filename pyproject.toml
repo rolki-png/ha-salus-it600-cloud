@@ -8,3 +8,8 @@ src = ["custom_components", "tests"]
 # I001 is unsorted imports. UP017 wants datetime.UTC. RUF012 flags Home Assistant
 # class-attribute lists. BLE001 is the MQTT reconnect handler catching Exception.
 ignore = ["BLE001", "I001", "RUF012", "UP017"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]

@@ -36,6 +36,20 @@ Copy `custom_components/salus_it600_cloud` into your Home Assistant `config/cust
 - Salus Smart Home (EU) cloud account
 - Network access to Cognito, Salus service API, and AWS IoT
 
+## Development
+
+Home Assistant needs Linux or macOS (or WSL/Docker on Windows).
+
+```bash
+python3.13 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements_test.txt
+pytest
+ruff check custom_components tests
+```
+
+`pytest` reads its settings (including `asyncio_mode = "auto"`) from `pyproject.toml`, so no extra flags are needed.
+
 ## Support
 
 Open an issue at https://github.com/rolki-png/ha-salus-it600-cloud/issues
