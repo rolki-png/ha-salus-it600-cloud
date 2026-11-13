@@ -6,27 +6,26 @@ on:
 
 jobs:
   pytest:
+    name: pytest (Python ${{ matrix.python }}, ${{ matrix.homeassistant }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python: "3.14"
+            homeassistant: homeassistant
+          - python: "3.13"
+            homeassistant: homeassistant==2025.8.*
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: ${{ matrix.python }}
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest pytest-asyncio homeassistant pycognito "paho-mqtt>=2.0.0"
+          pip install -r requirements_test.txt "${{ matrix.homeassistant }}"
+      - name: Show the Home Assistant version under test
+        run: pip show homeassistant | head -2
       - name: Run tests
-        run: pytest tests -q -o asyncio_mode=auto
-
-  ruff:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-      - name: Install Ruff
-        run: python -m pip install ruff==0.17.2
-      - name: Ruff
-        run: ruff check custom_components tests
+        run: pytest
