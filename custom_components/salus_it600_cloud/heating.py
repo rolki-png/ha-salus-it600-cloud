@@ -724,10 +724,17 @@ def _floor_from_cells(
     probe: Any,
     probe_present: bool,
 ) -> FloorReport:
-    exposed = (type(probe) is int and probe == 1) if probe_present else floor_present
+    """A probe flag of 1 exposes the sensor; without the flag, a floor cell does.
+
+    A reading of exactly 0 is the thermostat's "no reading" value, as with
+    humidity: a probe that is set up but not reporting yet, or a model that
+    leaves the cell at 0. It stays unknown instead of showing 0.00°C.
+    """
+    no_reading = type(floor_x100) is int and floor_x100 == 0
+    exposed = (type(probe) is int and probe == 1) if probe_present else floor_present and not no_reading
     return FloorReport(
         exposed=exposed,
-        sample=decode_x100_cell(floor_x100, present=floor_present) if exposed else None,
+        sample=decode_x100_cell(floor_x100, present=floor_present) if exposed and not no_reading else None,
     )
 
 

@@ -15,7 +15,7 @@ from custom_components.salus_it600_cloud.binary_sensor import (
 from custom_components.salus_it600_cloud.climate import SalusCloudClimate
 
 from . import fixtures
-from .helpers import FakeApi, create_coordinator
+from .helpers import FakeApi, NullFieldApi, create_coordinator
 
 
 def _entity(coordinator: object, device_id: str = fixtures.THERMOSTAT_ID) -> SalusRunningState:
@@ -46,6 +46,23 @@ async def test_setup_creates_one_heat_sensor_per_thermostat() -> None:
     assert all(type(entity) is SalusRunningState for entity in entities)
     assert all(not isinstance(entity, SalusCloudBinarySensor) for entity in entities)
     assert all(entity.device_class is BinarySensorDeviceClass.HEAT for entity in entities)
+
+
+async def test_null_device_type_and_model_set_up_the_same_binary_sensors() -> None:
+    """The cloud may send "type" or "model" as null. Setup must not crash and must find the same devices."""
+
+    entities = []
+    for api in (FakeApi(), NullFieldApi("type"), NullFieldApi("type", "model")):
+        coordinator, _, _ = await create_coordinator(api)
+        entry = MagicMock()
+        entry.runtime_data = coordinator
+        add_entities = MagicMock()
+        await binary_sensor.async_setup_entry(MagicMock(), entry, add_entities)
+        entities.append([entity.unique_id for call in add_entities.call_args_list for entity in call.args[0]])
+
+    assert entities[0]
+    assert entities[1] == entities[0]
+    assert entities[2] == entities[0]
 
 
 async def test_idle_demand_is_off() -> None:

@@ -67,7 +67,7 @@ async def async_setup_entry(
 
 def _is_binary_sensor_device(device: dict[str, Any]) -> bool:
     """Determine if device is a binary sensor."""
-    return device.get("type", "").lower() in BINARY_SENSOR_TYPES or device.get("model", "").upper().startswith("WLS")
+    return (device.get("type") or "").lower() in BINARY_SENSOR_TYPES or (device.get("model") or "").upper().startswith("WLS")
 
 
 def _get_device_class(device: dict[str, Any]) -> BinarySensorDeviceClass | None:

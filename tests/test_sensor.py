@@ -16,7 +16,7 @@ from custom_components.salus_it600_cloud.sensor import (
 )
 
 from . import fixtures
-from .helpers import CALL_LATER, FakeApi, create_coordinator
+from .helpers import CALL_LATER, FakeApi, NullFieldApi, create_coordinator
 
 
 def _metric(slug: str):
@@ -54,6 +54,22 @@ async def test_setup_creates_measurement_sensors_for_thermostats_only() -> None:
     assert all(entity.device_class is SensorDeviceClass.TEMPERATURE for entity in entities)
     assert all(entity.native_unit_of_measurement == UnitOfTemperature.CELSIUS for entity in entities)
     assert all(entity.suggested_display_precision == 1 for entity in entities)
+
+
+async def test_null_device_type_sets_up_the_same_sensors() -> None:
+    """The cloud may send "type": null. Setup must not crash and must find the same thermostats."""
+
+    entities = []
+    for api in (FakeApi(), NullFieldApi("type")):
+        coordinator, _, _ = await create_coordinator(api)
+        entry = MagicMock()
+        entry.runtime_data = coordinator
+        add_entities = MagicMock()
+        await sensor.async_setup_entry(MagicMock(), entry, add_entities)
+        entities.append([entity.unique_id for entity in add_entities.call_args.args[0]])
+
+    assert entities[1] == entities[0]
+    assert entities[0]
 
 
 async def test_native_values_match_reported_temperatures() -> None:
@@ -483,6 +499,21 @@ async def test_probe_without_a_reading_adds_an_unknown_sensor() -> None:
     entity = (await _sensor_entities(coordinator))[_uid(fixtures.THERMOSTAT_ID, "floor_temperature")]
 
     assert entity.native_value is None
+
+
+async def test_probe_reading_zero_is_unknown_not_zero_degrees() -> None:
+    """A probe that is set up but not reporting yet sends 0."""
+
+    coordinator, _, _ = await _coordinator_with(**{FLOOR_PROBE: 1, FLOOR: 0})
+    entity = (await _sensor_entities(coordinator))[_uid(fixtures.THERMOSTAT_ID, "floor_temperature")]
+
+    assert entity.native_value is None
+
+
+async def test_zero_floor_cell_without_a_probe_flag_adds_no_sensor() -> None:
+    coordinator, _, _ = await _coordinator_with(**{FLOOR: 0})
+
+    assert _uid(fixtures.THERMOSTAT_ID, "floor_temperature") not in await _sensor_entities(coordinator)
 
 
 @pytest.mark.parametrize("probe", [0, True])
