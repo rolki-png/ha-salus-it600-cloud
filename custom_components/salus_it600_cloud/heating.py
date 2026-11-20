@@ -256,6 +256,27 @@ class HumidityReport:
 
 
 @dataclass(frozen=True)
+class FloorReport:
+    """Reported floor probe temperature.
+
+    The thermostat's own probe flag decides exposure when it reports one, so a
+    model that uses the same cell for something else never shows a floor
+    reading. Only without that flag does the floor cell alone expose it. sample
+    is None when the reading is hidden, absent, or not an int. The integer 0 is
+    0°C. A bool probe value is not a probe.
+    """
+
+    exposed: bool
+    sample: CentiCelsius | None
+
+    def __post_init__(self) -> None:
+        if self.sample is not None and type(self.sample) is not CentiCelsius:
+            raise TypeError("floor sample must be CentiCelsius")
+        if self.sample is not None and not self.exposed:
+            raise ValueError("a floor sample requires exposure")
+
+
+@dataclass(frozen=True)
 class ThermostatObservation:
     """One parsed thermostat shadow. observe and history cells are the only builders."""
 
@@ -266,6 +287,7 @@ class ThermostatObservation:
     max_heat_setpoint: CentiCelsius | None
     cooling: CoolingReport
     humidity: HumidityReport
+    floor: FloorReport
     hold: Hold
     system_mode: SystemMode
     battery: DeciVolt | None
@@ -285,6 +307,8 @@ class ThermostatObservation:
             raise TypeError("cooling must be CoolingReport")
         if type(self.humidity) is not HumidityReport:
             raise TypeError("humidity must be HumidityReport")
+        if type(self.floor) is not FloorReport:
+            raise TypeError("floor must be FloorReport")
         if type(self.hold) is not Hold or type(self.system_mode) is not SystemMode:
             raise TypeError("hold and system_mode must be their domain types")
         if self.battery is not None and type(self.battery) is not DeciVolt:
@@ -358,6 +382,14 @@ def _cooling_shown(observation: ThermostatObservation) -> bool:
     return observation.cooling.exposed
 
 
+def _read_floor(observation: ThermostatObservation) -> CentiCelsius | None:
+    return observation.floor.sample
+
+
+def _floor_shown(observation: ThermostatObservation) -> bool:
+    return observation.floor.exposed
+
+
 @dataclass(frozen=True)
 class HumidityMetric:
     """One humidity sensor. read returns the observation field, not a wire key.
@@ -391,6 +423,13 @@ COOLING_SETPOINT_METRIC = TemperatureMetric(
     "cooling_setpoint",
     _read_cooling,
     _cooling_shown,
+)
+FLOOR_TEMPERATURE_METRIC = TemperatureMetric(
+    "floor_temperature",
+    "Floor temperature",
+    "floor_temperature",
+    _read_floor,
+    _floor_shown,
 )
 HUMIDITY_METRIC = HumidityMetric("humidity", "Humidity", "humidity", _read_humidity, _humidity_shown)
 RUNNING_STATE_METRIC = MetricLabel("running_state", "Running state", "running_state")
@@ -465,6 +504,9 @@ _COOLING_SETPOINT_KEY = "ep9:sIT600TH:CoolingSetpoint_x100"
 _COOLING_CONTROL_KEY = "ep9:sIT600TH:CoolingControl"
 # The Salus temperature curve labels this cell Humidity. The cloud integer is already a percent.
 _HUMIDITY_KEY = "ep9:sIT600TH:SunnySetpoint_x100"
+# The Salus app shows this cell as the floor probe reading, in hundredths of a degree.
+_FLOOR_KEY = "ep9:sIT600TH:CloudySetpoint_x100"
+_FLOOR_PROBE_KEY = "ep9:sIT600TH:OUTSensorProbe"
 _LOCK_WIRE = ("ep9:sIT600TH:SetLockKey", "ep9:sIT600TH:LockKey")
 _BATTERY_LEVEL_KEY = "ep9:sIT600TH:BatteryLevel"
 _RSSI_KEY = "ep9:sIT600I:LastMessageRSSI_d"
@@ -552,11 +594,15 @@ def observation_from_cells(
     cooling_control_present: bool = False,
     humidity: Any = None,
     humidity_present: bool = False,
+    floor_x100: Any = None,
+    floor_present: bool = False,
+    floor_probe: Any = None,
+    floor_probe_present: bool = False,
 ) -> ThermostatObservation:
     """Build an observation from raw cells. Callers do not pass property names.
 
-    Heat limits, cooling, and humidity default to absent. History rows do not
-    carry them unless the caller passes the humidity cell.
+    Heat limits, cooling, humidity, and the floor probe default to absent.
+    History rows do not carry them unless the caller passes the humidity cell.
     """
     tenths = _optional_int(battery_present, battery_tenths)
     return ThermostatObservation(
@@ -572,6 +618,7 @@ def observation_from_cells(
             exposed=humidity_present,
             sample=decode_percent_cell(humidity, present=humidity_present),
         ),
+        floor=_floor_from_cells(floor_x100, floor_present, floor_probe, floor_probe_present),
         hold=_hold(hold_present, hold),
         system_mode=SystemMode(_optional_int(system_mode_present, system_mode)),
         battery=None if tenths is None else DeciVolt(tenths),
@@ -594,6 +641,8 @@ def observe(properties: Mapping[str, Any]) -> ThermostatObservation | None:
     cooling_present, cooling = _cell(properties, _COOLING_SETPOINT_KEY)
     control_present, control = _cell(properties, _COOLING_CONTROL_KEY)
     humidity_present, humidity = _cell(properties, _HUMIDITY_KEY)
+    floor_present, floor = _cell(properties, _FLOOR_KEY)
+    probe_present, probe = _cell(properties, _FLOOR_PROBE_KEY)
     hold_present, hold = _cell(properties, _HOLD_WIRE[1])
     system_present, system_mode = _cell(properties, _SYSTEM_WIRE[1])
     battery_present, battery = _cell(properties, _READ_ONLY["battery"])
@@ -620,6 +669,10 @@ def observe(properties: Mapping[str, Any]) -> ThermostatObservation | None:
         cooling_control_present=control_present,
         humidity=humidity,
         humidity_present=humidity_present,
+        floor_x100=floor,
+        floor_present=floor_present,
+        floor_probe=probe,
+        floor_probe_present=probe_present,
     )
 
 
@@ -661,6 +714,19 @@ def _cooling_from_cells(
     return CoolingReport(
         exposed=enabled or setpoint_present,
         sample=decode_x100_cell(setpoint_x100, present=setpoint_present),
+    )
+
+
+def _floor_from_cells(
+    floor_x100: Any,
+    floor_present: bool,
+    probe: Any,
+    probe_present: bool,
+) -> FloorReport:
+    exposed = (type(probe) is int and probe == 1) if probe_present else floor_present
+    return FloorReport(
+        exposed=exposed,
+        sample=decode_x100_cell(floor_x100, present=floor_present) if exposed else None,
     )
 
 

@@ -57,6 +57,7 @@ _THERMOSTAT_PROPERTIES = frozenset(
         "MinHeatSetpoint_x100",
         "OnlineState",
         "OnlineStatus_i",
+        "OUTSensorProbe",
         "RunningState",
         "SunnySetpoint_x100",
         "SystemMode",

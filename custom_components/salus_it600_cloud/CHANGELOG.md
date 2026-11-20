@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-11-20
+
+### Added
+
+- A floor temperature sensor on thermostats with a floor probe. The Salus app shows `CloudySetpoint_x100` as the floor reading, in hundredths of a degree. `OUTSensorProbe` 1 adds the sensor and any other value hides it. A thermostat that does not report `OUTSensorProbe` gets the sensor when the floor cell is present. Diagnostics now keep `OUTSensorProbe`.
+
 ## [1.4.0] - 2026-10-26
 
 ### Added
@@ -231,7 +237,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Planned features
 
-These items are not in 1.4.0.
+These items are not in 1.5.0.
 
 - Schedule viewing and editing
 - US region accounts
