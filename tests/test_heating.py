@@ -198,7 +198,7 @@ def test_alternate_suffix_keys_are_not_heat_limits_or_cooling() -> None:
 
 
 def test_sunny_setpoint_is_whole_percent_humidity() -> None:
-    """60 is 60%. Temperature hundredths stay on their own scale. A bool is not a reading."""
+    """60 is 60%. Temperature hundredths stay on their own scale. A bool is not a reading, and 0 means no sensor."""
 
     humid = observe(_properties(**{LOCAL: 1620, HUMIDITY: 60}))
     zero = observe(_properties(**{HUMIDITY: 0}))
@@ -216,7 +216,8 @@ def test_sunny_setpoint_is_whole_percent_humidity() -> None:
     assert humid.local_temperature.celsius() == 16.2
     assert humid.humidity.exposed is True
     assert humid.humidity.sample.percent() == 60.0
-    assert zero.humidity.sample.percent() == 0.0
+    assert zero.humidity.exposed is False
+    assert zero.humidity.sample is None
     assert absent.humidity.exposed is False
     assert absent.humidity.sample is None
     assert garbage.humidity.exposed is True

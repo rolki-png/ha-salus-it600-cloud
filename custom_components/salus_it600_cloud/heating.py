@@ -560,12 +560,13 @@ def decode_x100_cell(value: Any, *, present: bool) -> CentiCelsius | None:
 
 
 def decode_percent_cell(value: Any, *, present: bool) -> Percent | None:
-    """Whole percent, or None when the cell is missing or not an int.
+    """Whole percent, or None when the cell is missing, not an int, or 0.
 
-    The integer 0 is 0%. bool and float are not humidity. A cloud reading of
-    60 stays 60%. This cell is not scaled like a temperature.
+    A thermostat without a humidity sensor reports 0, and indoor air is never
+    at 0%. bool and float are not humidity. A cloud reading of 60 stays 60%.
+    This cell is not scaled like a temperature.
     """
-    if not present or type(value) is not int:
+    if not present or type(value) is not int or value == 0:
         return None
     return Percent(value)
 
@@ -615,7 +616,7 @@ def observation_from_cells(
             cooling_x100, cooling_present, cooling_control, cooling_control_present
         ),
         humidity=HumidityReport(
-            exposed=humidity_present,
+            exposed=humidity_present and not (type(humidity) is int and humidity == 0),
             sample=decode_percent_cell(humidity, present=humidity_present),
         ),
         floor=_floor_from_cells(floor_x100, floor_present, floor_probe, floor_probe_present),
@@ -760,6 +761,11 @@ def _int_cell(properties: Mapping[str, Any], key: str) -> IntCell:
     if present and type(value) is int:
         return IntCell(present=True, value=value)
     return IntCell(present=present, value=None)
+
+
+def reports_thermostat(properties: Mapping[str, Any]) -> bool:
+    """Return whether a device shadow carries thermostat cells, whatever the model is called."""
+    return any(key.startswith(_THERMOSTAT_CLUSTER) for key in properties)
 
 
 def _error_code(key: str) -> str | None:

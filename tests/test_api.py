@@ -204,6 +204,41 @@ async def test_fetch_metadata_splits_gateways_devices_and_rules() -> None:
     assert {rule["_gateway_id"] for rule in metadata.rules} == {fixtures.GATEWAY_ID}
 
 
+async def test_fetch_metadata_reads_devices_and_rules_inside_app_groups() -> None:
+    """Floor groups made in the Salus app nest devices and rules one level down. They read like the flat list."""
+
+    flat = fixtures.slider_details()
+    items = flat["data"]["items"]
+    grouped = {
+        **flat,
+        "data": {
+            **flat["data"],
+            "items": [
+                {"id": "group-first", "name": "First floor", "dashboard_attributes": {}, "items": items[:2]},
+                {"id": "group-ground", "name": "Ground floor ", "dashboard_attributes": {}, "items": items[2:5]},
+                *items[5:],
+            ],
+        },
+    }
+    api, _, _ = _api(
+        {
+            "/occupants/slider_list": lambda: _Response(200, fixtures.slider_list()),
+            "/occupants/slider_details": lambda: _Response(200, grouped),
+        }
+    )
+    await api.authenticate()
+
+    metadata = await api.fetch_metadata()
+
+    assert [device["id"] for device in metadata.devices] == [
+        fixtures.THERMOSTAT_ID,
+        fixtures.THERMOSTAT_2_ID,
+        fixtures.RELAY_ID,
+        fixtures.GATEWAY_ID,
+    ]
+    assert [rule["id"] for rule in metadata.rules] == [fixtures.RULE_ID, fixtures.AUTO_RULE_ID]
+
+
 async def test_fetch_metadata_fails_when_gateway_details_fail() -> None:
     """Metadata is never returned incomplete when details of a gateway cannot be fetched."""
 

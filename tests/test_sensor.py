@@ -340,11 +340,12 @@ async def test_humidity_is_whole_percent_when_the_key_is_present() -> None:
     assert _uid(fixtures.THERMOSTAT_2_ID, "humidity") not in entities
 
 
-async def test_zero_humidity_is_zero_percent() -> None:
-    coordinator, _, _ = await _coordinator_with(**{HUMIDITY: 0})
-    entity = (await _sensor_entities(coordinator))[_uid(fixtures.THERMOSTAT_ID, "humidity")]
+async def test_zero_humidity_means_no_humidity_sensor() -> None:
+    """A thermostat without a humidity sensor reports 0. Indoor air is never at 0%, so it gets no sensor."""
 
-    assert entity.native_value == 0.0
+    coordinator, _, _ = await _coordinator_with(**{HUMIDITY: 0})
+
+    assert _uid(fixtures.THERMOSTAT_ID, "humidity") not in await _sensor_entities(coordinator)
 
 
 async def test_missing_humidity_key_adds_no_sensor() -> None:

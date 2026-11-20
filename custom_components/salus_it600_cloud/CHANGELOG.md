@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-11-20
+
+### Fixed
+
+- Devices inside floor or room groups made in the Salus app are found again. With groups, the cloud nests devices and OneTouch rules one level down, and setup found no devices at all.
+- A thermostat model missing from the model and name lists, such as the hard-wired `it600ThermHW_AC`, gets a climate entity when its shadow reports thermostat cells.
+- A humidity of 0 no longer shows as 0%. Thermostats without a humidity sensor report 0, so they get no humidity sensor and the climate entity shows no humidity.
+
 ## [1.5.0] - 2026-11-20
 
 ### Added
@@ -237,7 +245,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Planned features
 
-These items are not in 1.5.0.
+These items are not in 1.6.0.
 
 - Schedule viewing and editing
 - US region accounts
