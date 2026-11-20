@@ -93,6 +93,9 @@
       "cooling_setpoint": {
         "name": "Nastavená teplota chlazení"
       },
+      "floor_temperature": {
+        "name": "Teplota podlahy"
+      },
       "heating_setpoint": {
         "name": "Nastavená teplota topení"
       },

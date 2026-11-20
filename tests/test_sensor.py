@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import PERCENTAGE, SIGNAL_STRENGTH_DECIBELS_MILLIWATT, EntityCategory, UnitOfTemperature
 
@@ -446,6 +448,72 @@ async def test_cooling_setpoint_that_appears_later_is_added_once() -> None:
     coordinator.async_set_updated_data(dict(coordinator.data))
     entity = _added(add_entities)[_uid(fixtures.THERMOSTAT_ID, "cooling_setpoint")]
     assert entity.native_value == 19.0
+
+    calls = add_entities.call_count
+    coordinator.async_set_updated_data({})
+    coordinator.async_set_updated_data(dict(coordinator.data))
+    assert add_entities.call_count == calls
+
+
+FLOOR = "ep9:sIT600TH:CloudySetpoint_x100"
+FLOOR_PROBE = "ep9:sIT600TH:OUTSensorProbe"
+
+
+async def test_floor_temperature_is_a_measurement_on_a_thermostat_with_a_probe() -> None:
+    """1999 reads 19.99°C, which the Salus app rounds to 20°. The thermostat without a probe gets no sensor."""
+
+    coordinator, _, _ = await _coordinator_with(**{FLOOR: 1999, FLOOR_PROBE: 1})
+    entities = await _sensor_entities(coordinator)
+    entity = entities[_uid(fixtures.THERMOSTAT_ID, "floor_temperature")]
+
+    assert isinstance(entity, SalusHeatingTemperature)
+    assert entity.native_value == 19.99
+    assert entity.state_class is SensorStateClass.MEASUREMENT
+    assert entity.device_class is SensorDeviceClass.TEMPERATURE
+    assert entity.native_unit_of_measurement == UnitOfTemperature.CELSIUS
+    assert entity.entity_category is None
+    assert entity.translation_key == "floor_temperature"
+    assert entity.name == "Apartmán A Termostat pokoj Floor temperature"
+    assert _uid(fixtures.THERMOSTAT_2_ID, "floor_temperature") not in entities
+
+
+async def test_probe_without_a_reading_adds_an_unknown_sensor() -> None:
+    coordinator, _, _ = await _coordinator_with(**{FLOOR_PROBE: 1})
+    entity = (await _sensor_entities(coordinator))[_uid(fixtures.THERMOSTAT_ID, "floor_temperature")]
+
+    assert entity.native_value is None
+
+
+@pytest.mark.parametrize("probe", [0, True])
+async def test_a_thermostat_without_a_probe_gets_no_floor_sensor_even_with_the_cell(probe: object) -> None:
+    """A model that uses the cell for something else must not show it as a floor reading."""
+
+    coordinator, _, _ = await _coordinator_with(**{FLOOR_PROBE: probe, FLOOR: 2100})
+
+    assert _uid(fixtures.THERMOSTAT_ID, "floor_temperature") not in await _sensor_entities(coordinator)
+
+
+async def test_floor_cell_without_a_probe_flag_adds_the_sensor() -> None:
+    coordinator, _, _ = await _coordinator_with(**{FLOOR: 1841})
+    entity = (await _sensor_entities(coordinator))[_uid(fixtures.THERMOSTAT_ID, "floor_temperature")]
+
+    assert entity.native_value == 18.41
+
+
+async def test_floor_reading_that_appears_later_is_added_once() -> None:
+    """A floor cell that shows up after setup still gets one sensor. A repeat does not add another."""
+
+    coordinator, _, _ = await create_coordinator()
+    entry, add_entities = _setup_sensors(coordinator)
+    await sensor.async_setup_entry(MagicMock(), entry, add_entities)
+    assert _uid(fixtures.THERMOSTAT_ID, "floor_temperature") not in _added(add_entities)
+
+    properties = dict(coordinator.data[fixtures.THERMOSTAT_ID]["_shadow_properties"])
+    properties[FLOOR] = 1604
+    coordinator.data[fixtures.THERMOSTAT_ID]["_shadow_properties"] = properties
+    coordinator.async_set_updated_data(dict(coordinator.data))
+    entity = _added(add_entities)[_uid(fixtures.THERMOSTAT_ID, "floor_temperature")]
+    assert entity.native_value == 16.04
 
     calls = add_entities.call_count
     coordinator.async_set_updated_data({})

@@ -25,6 +25,7 @@ from .entity import SalusEntity, async_add_salus_entities
 from .heating import (
     COOLING_SETPOINT_METRIC,
     DIAGNOSTIC_METRICS,
+    FLOOR_TEMPERATURE_METRIC,
     HUMIDITY_METRIC,
     TEMPERATURE_METRICS,
     DiagnosticKind,
@@ -59,6 +60,7 @@ async def async_setup_entry(
 
     async_add_salus_entities(entry, coordinator, async_add_entities, records, entities)
     _add_shown_temperature(entry, coordinator, async_add_entities, COOLING_SETPOINT_METRIC)
+    _add_shown_temperature(entry, coordinator, async_add_entities, FLOOR_TEMPERATURE_METRIC)
     _add_humidity(entry, coordinator, async_add_entities, HUMIDITY_METRIC)
     for metric in DIAGNOSTIC_METRICS:
         _add_diagnostic(entry, coordinator, async_add_entities, metric)

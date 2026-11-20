@@ -93,6 +93,9 @@
       "cooling_setpoint": {
         "name": "Cooling setpoint"
       },
+      "floor_temperature": {
+        "name": "Floor temperature"
+      },
       "heating_setpoint": {
         "name": "Heating setpoint"
       },

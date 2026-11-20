@@ -6,7 +6,7 @@ Home Assistant custom integration for Salus iT600 devices through the Salus Clou
 
 - Climate control for SQ610 and related thermostats
 - MQTT shadow push with REST poll fallback
-- Room temperature, humidity, heating setpoint, and a cooling setpoint sensor when the shadow reports cooling
+- Room temperature, humidity, heating setpoint, a floor temperature sensor when the thermostat has a floor probe, and a cooling setpoint sensor when the shadow reports cooling
 - Heat-demand binary sensor from `RunningState`
 - Battery level, signal strength, link quality, a problem sensor, and a keypad lock when the thermostat reports them
 - Switches, binary sensors, and OneTouch buttons when present on the account

@@ -10,6 +10,7 @@ ROOT = Path(__file__).parents[1] / "custom_components" / "salus_it600_cloud"
 SENSOR_NAMES = {
     "battery_level": "Battery level",
     "cooling_setpoint": "Cooling setpoint",
+    "floor_temperature": "Floor temperature",
     "heating_setpoint": "Heating setpoint",
     "humidity": "Humidity",
     "link_quality": "Link quality",
