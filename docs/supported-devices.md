@@ -42,7 +42,9 @@ Keypad lock exists when `LockKey` is present. Lock and unlock write `SetLockKey`
 
 `OUTSensorProbe` decides whether a thermostat gets the sensor. The integer 1 adds it, and any other value hides it, even when `CloudySetpoint_x100` is present. The cell name suggests other models may use it for a setpoint, so the probe flag wins. A thermostat that does not report `OUTSensorProbe` gets the sensor when `CloudySetpoint_x100` is present.
 
-`OUTSensorType` has only been seen as 0, on thermostats with a floor probe. The integration does not read it yet.
+A reading of exactly 0 means no reading, as with humidity. A thermostat sends it while a probe is set up but not reporting yet, so the sensor shows unknown. Without a probe flag, a 0 floor cell adds no sensor.
+
+`OUTSensorType` is 0 on the thermostats seen reporting a floor reading. One `it600ThermHW_AC` reported type 1 with a reading of 0. The integration does not read the type yet.
 
 ## Wiring centre
 

@@ -143,7 +143,7 @@ def _add_humidity(
 
 def _has_temperature(device: dict[str, Any]) -> bool:
     """Check if device is a standalone temperature sensor."""
-    device_type = device.get("type", "").lower()
+    device_type = (device.get("type") or "").lower()
     return device_type == "temperature_sensor" or (device_type == "sensor" and "temperature" in device)
 
 

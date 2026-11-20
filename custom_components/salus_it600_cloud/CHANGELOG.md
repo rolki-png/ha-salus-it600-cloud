@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.1] - 2026-11-20
+
+### Fixed
+
+- Setup no longer fails when the cloud sends a device's `type` or `model` as null. The sensor and binary sensor platforms crashed and left every Salus sensor unavailable.
+- A floor probe reading of exactly 0 is unknown instead of 0.00°C. Thermostats send 0 while a probe is set up but not reporting yet. Without a probe flag, a 0 floor cell adds no sensor.
+
 ## [1.6.0] - 2026-11-20
 
 ### Fixed

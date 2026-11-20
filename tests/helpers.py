@@ -136,3 +136,17 @@ async def create_coordinator(
     coordinator.data = await coordinator._async_update_data()
     await coordinator.async_start_connection()
     return coordinator, connection, clock
+
+
+class NullFieldApi(FakeApi):
+    """Salus Cloud API that sends the named device fields as null, as the live cloud can."""
+
+    def __init__(self, *fields: str) -> None:
+        super().__init__()
+        self.null_fields = fields
+
+    async def fetch_metadata(self) -> SalusMetadata:
+        result = await super().fetch_metadata()
+        for device in result.devices:
+            device.update(dict.fromkeys(self.null_fields))
+        return result
