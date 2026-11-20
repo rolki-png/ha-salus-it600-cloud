@@ -37,6 +37,40 @@ async def test_setup_creates_thermostats_only() -> None:
     ]
 
 
+async def test_a_thermostat_model_the_name_lists_miss_is_found_by_its_shadow() -> None:
+    """A hard-wired it600ThermHW_AC reports thermostat cells, so it gets a climate entity. The wiring centre does not."""
+
+    coordinator, _, _ = await create_coordinator()
+    coordinator.data = {
+        **coordinator.data,
+        "hw-thermostat": {
+            "id": "hw-thermostat",
+            "name": "Szoba 3",
+            "model": "it600ThermHW_AC",
+            "_gateway_id": fixtures.GATEWAY_ID,
+            "_shadow_properties": {"ep9:sIT600TH:LocalTemperature_x100": 1500},
+            "_fresh": True,
+        },
+        "wiring-centre": {
+            "id": "wiring-centre",
+            "name": "iT600 Wiring Centre",
+            "model": "it600WCNH",
+            "_gateway_id": fixtures.GATEWAY_ID,
+            "_shadow_properties": {"ep8:sIT600WC:Error10": 0},
+            "_fresh": True,
+        },
+    }
+    entry = MagicMock()
+    entry.runtime_data = coordinator
+    add_entities = MagicMock()
+
+    await climate.async_setup_entry(MagicMock(), entry, add_entities)
+
+    unique_ids = [entity.unique_id for entity in add_entities.call_args.args[0]]
+    assert f"salus_it600_cloud_{fixtures.GATEWAY_ID}_hw-thermostat" in unique_ids
+    assert f"salus_it600_cloud_{fixtures.GATEWAY_ID}_wiring-centre" not in unique_ids
+
+
 async def test_entity_name_is_unchanged() -> None:
     """Existing names (and therefore entity ids) of thermostats stay the same."""
 
@@ -325,9 +359,11 @@ async def test_current_humidity_is_the_reported_percent() -> None:
 async def test_missing_or_unreadable_humidity_stays_unset() -> None:
     missing = await _climate_with()
     garbage = await _climate_with(**{"ep9:sIT600TH:SunnySetpoint_x100": True})
+    no_sensor = await _climate_with(**{"ep9:sIT600TH:SunnySetpoint_x100": 0})
 
     assert missing.current_humidity is None
     assert garbage.current_humidity is None
+    assert no_sensor.current_humidity is None
 
 
 async def test_cooling_cells_do_not_add_a_cool_mode() -> None:

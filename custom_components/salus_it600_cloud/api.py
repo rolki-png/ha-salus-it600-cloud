@@ -91,6 +91,21 @@ def jwt_expiry(token: str | None) -> datetime | None:
         return None
 
 
+def _flatten_groups(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return devices and rules, also those inside the floor or room groups the Salus app creates.
+
+    A group has an items list but no device code and no rule trigger key.
+    """
+    flat: list[dict[str, Any]] = []
+    for item in items:
+        nested = item.get("items")
+        if isinstance(nested, list) and not item.get("device_code") and "rule_trigger_key" not in item:
+            flat.extend(_flatten_groups(nested))
+        else:
+            flat.append(item)
+    return flat
+
+
 class SalusCloudApi:
     """Client for Salus Cloud REST API."""
 
@@ -226,7 +241,7 @@ class SalusCloudApi:
                 )
             )
             details = await self.get_gateway_details(gateway_id)
-            for detail in details.get("items", []):
+            for detail in _flatten_groups(details.get("items", [])):
                 entry = {**detail, "_gateway_id": gateway_id}
                 (rules if "rule_trigger_key" in detail else devices).append(entry)
         return SalusMetadata(gateways=gateways, devices=devices, rules=rules)

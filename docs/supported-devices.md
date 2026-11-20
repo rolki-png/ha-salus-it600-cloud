@@ -15,7 +15,7 @@ Cool stays disabled. `SystemMode` is in the shadow. The integer that means cool 
 The thermostat gets these sensors when the matching shadow cell is present.
 
 - Temperature, from the room reading.
-- Humidity, when `SunnySetpoint_x100` is present. The Salus temperature curve labels that cell Humidity. The cloud integer is already a percent: 60 is 60%. It is not scaled like `LocalTemperature_x100`.
+- Humidity, when `SunnySetpoint_x100` is present and not 0. The Salus temperature curve labels that cell Humidity. The cloud integer is already a percent: 60 is 60%. It is not scaled like `LocalTemperature_x100`. A thermostat without a humidity sensor, such as the hard-wired `it600ThermHW_AC`, reports 0.
 - Heating setpoint.
 - Floor temperature, on a thermostat with a floor probe. See Floor probe below.
 - Cooling setpoint, only when `CoolingControl` is the integer 1 or `CoolingSetpoint_x100` is present. The sensor does not turn on cool mode.
@@ -54,7 +54,9 @@ Endpoint 7 reports `sIT600I:RelayStatus`, plus `Mode` and the link counters `Las
 
 ## Other devices the code still creates
 
-The climate check also accepts model prefixes HTRP-RF, TS600, VS10, VS20, SQ610, and FC600. This account's reported thermostat cluster is `sIT600TH`.
+The climate check also accepts model prefixes HTRP-RF, TS600, VS10, VS20, SQ610, and FC600. Any device whose shadow reports `ep9:sIT600TH` cells is a thermostat too, whatever its model is called. The hard-wired `it600ThermHW_AC` is found that way.
+
+Devices can sit inside floor or room groups made in the Salus app. The cloud then nests them, and any OneTouch rules, one level down in the gateway details. A group has an `items` list but no device code. Setup reads grouped and ungrouped devices alike.
 
 When the device list contains them, the integration also creates these entities.
 
